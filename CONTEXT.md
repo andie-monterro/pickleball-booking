@@ -52,7 +52,7 @@ The venue's bookable window, defined per day of week and aligned to whole hours.
 _Avoid_: Schedule, business hours
 
 **Booking Horizon**:
-How far ahead a Booking may be made: 7 days for the base case. A Slot is bookable from the moment it enters the horizon until its start time.
+How far ahead a Booking may be made, per player standing: 14 days for Members, 7 days for Casual players (venue settings; these are the defaults). The horizon rolls per Slot: a Slot is bookable from the exact moment its start time enters the Booker's horizon until the Slot starts. Every Slot of a Booking must be inside the Booker's horizon. Standing is judged when the Booking is created — a Booking stays valid if membership ends before play.
 _Avoid_: Booking window, advance period
 
 **Cancellation Cutoff**:
