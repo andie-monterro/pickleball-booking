@@ -54,3 +54,23 @@ _Avoid_: Schedule, business hours
 **Booking Horizon**:
 How far ahead a Booking may be made: 7 days for the base case. A Slot is bookable from the moment it enters the horizon until its start time.
 _Avoid_: Booking window, advance period
+
+**Cancellation Cutoff**:
+How close to a Booking's start the Booker may still cancel penalty-free: 6 hours before the first Slot. Independently of the cutoff, a Booking may be cancelled penalty-free within 15 minutes of its creation. Cancelling is possible only until the Booking starts; a cancelled Slot reopens for booking immediately.
+_Avoid_: Deadline, cancellation window
+
+**Late Cancel**:
+A Booker's cancellation after the Cancellation Cutoff (and outside the 15-minute creation grace). Allowed, but earns the Booker one Strike.
+_Avoid_: Late cancellation fee, no-cancel
+
+**No-show**:
+A Booking whose Booker never arrived, marked by Staff any time after the Booking starts. Earns the Booker one Strike. The mark is undoable and audit-logged; the app enforces no waiting period — Staff judge.
+_Avoid_: Absence, missed booking
+
+**Strike**:
+A mark against a Player for a Late Cancel or a No-show. Counts toward a Booking Ban for 90 days from the date it was earned, then stops counting. Staff may waive any Strike (audit-logged). Players see their own Strike count in the app. The same rules apply to Members and Casual players.
+_Avoid_: Penalty point, flag, demerit
+
+**Booking Ban**:
+14 days without self-service booking, started whenever a new Strike brings a Player to 3 or more Strikes within 90 days. Existing Bookings are kept, and Staff may still create Bookings for a banned Player at the desk. The Player sees the ban end date in the app.
+_Avoid_: Suspension, lockout, block
