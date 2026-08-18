@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE — Booking flow (AND-15)</title>
+<!--
+  PROTOTYPE — THROWAWAY. Do not ship.
+  Ticket: AND-15 "Prototype the booking flow".
+  Question: does a "couple of taps" booking flow work — availability → pick → confirm?
+  Three structurally different variants on one file, switchable with the bottom bar or ?variant=A|B|C.
+  All data is fake and lives in memory. Reload = reset.
+-->
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#ffffff; --ink:#1c2430; --muted:#68737f; --line:#e3e7ec;
+    --brand:#0f766e; --brand-ink:#ffffff; --free:#e8f5f0; --free-line:#b9e2d4;
+    --taken:#eef0f3; --mine:#dbeafe; --mine-line:#93c5fd; --lock:#f3eee2;
+    --danger:#b4232a; --warn-bg:#fdf1e3; --warn-line:#f0c98d;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+       padding-bottom:90px}
+  .top{background:var(--card);border-bottom:1px solid var(--line);padding:10px 14px;
+       display:flex;flex-wrap:wrap;gap:10px;align-items:center;position:sticky;top:0;z-index:5}
+  .top h1{font-size:16px;margin:0;font-weight:650}
+  .top .demo{font-size:12px;color:var(--muted)}
+  .spacer{flex:1}
+  .chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);
+        background:var(--card);border-radius:999px;padding:5px 12px;font-size:13px;cursor:pointer}
+  .chip.strike{cursor:default}
+  .chip .dot{width:8px;height:8px;border-radius:50%;background:var(--danger)}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden}
+  .seg button{border:0;background:var(--card);padding:5px 12px;font-size:13px;cursor:pointer;color:var(--muted)}
+  .seg button.on{background:var(--brand);color:var(--brand-ink)}
+  .wrap{max-width:1020px;margin:0 auto;padding:14px}
+  .banner{background:var(--warn-bg);border:1px solid var(--warn-line);border-radius:10px;
+          padding:10px 14px;margin:0 0 12px;font-size:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+  .hint{color:var(--muted);font-size:13px;margin:4px 0 10px}
+  /* day strip */
+  .days{display:flex;gap:8px;overflow-x:auto;padding-bottom:6px}
+  .day{min-width:86px;border:1px solid var(--line);border-radius:10px;background:var(--card);
+       padding:8px 10px;text-align:center;cursor:pointer;flex:0 0 auto}
+  .day .dow{font-size:12px;color:var(--muted)}
+  .day .dnum{font-weight:650}
+  .day.sel{border-color:var(--brand);box-shadow:0 0 0 2px var(--brand) inset}
+  .day.lock{background:var(--lock);cursor:not-allowed;color:var(--muted)}
+  .day .locknote{font-size:11px;color:#8a6d1d}
+  /* grid (variant A) */
+  .gridscroll{overflow-x:auto}
+  table.grid{border-collapse:separate;border-spacing:4px;width:100%;min-width:560px}
+  table.grid th{font-size:12px;color:var(--muted);font-weight:600;padding:2px 4px}
+  table.grid td{padding:0}
+  .cell{display:block;width:100%;border-radius:8px;border:1px solid var(--free-line);
+        background:var(--free);padding:9px 4px;font-size:12.5px;text-align:center;cursor:pointer}
+  .cell:disabled{cursor:not-allowed}
+  .cell.taken{background:var(--taken);border-color:var(--line);color:var(--muted)}
+  .cell.block{background:repeating-linear-gradient(45deg,#eee,#eee 6px,#e2e2e2 6px,#e2e2e2 12px);
+              border-color:var(--line);color:var(--muted)}
+  .cell.mine{background:var(--mine);border-color:var(--mine-line)}
+  .cell.past{background:transparent;border-color:transparent;color:#c2c8cf}
+  .cell.sel{background:var(--brand);border-color:var(--brand);color:var(--brand-ink);font-weight:650}
+  /* time list (variant B) */
+  .hrow{display:flex;align-items:center;gap:12px;border:1px solid var(--line);border-radius:10px;
+        padding:12px 14px;margin-bottom:8px;background:var(--card);cursor:pointer}
+  .hrow.full{opacity:.55;cursor:not-allowed}
+  .hrow.sel{border-color:var(--brand);box-shadow:0 0 0 2px var(--brand) inset}
+  .hrow .t{font-weight:650;min-width:60px}
+  .hrow .free{font-size:13px;color:var(--muted)}
+  .pill{margin-left:auto;font-size:12px;border-radius:999px;padding:3px 10px;background:var(--free);border:1px solid var(--free-line)}
+  .pill.zero{background:var(--taken);border-color:var(--line);color:var(--muted)}
+  /* wizard (variant C) */
+  .steps{display:flex;gap:6px;margin-bottom:12px;font-size:13px;color:var(--muted)}
+  .steps b{color:var(--ink)}
+  .optlist{display:flex;flex-wrap:wrap;gap:8px}
+  .opt{border:1px solid var(--line);background:var(--card);border-radius:10px;padding:10px 16px;
+       cursor:pointer;font-size:14px}
+  .opt.big{width:100%;text-align:left;display:flex;justify-content:space-between;align-items:center}
+  .opt:disabled{background:var(--lock);color:var(--muted);cursor:not-allowed}
+  .opt.sel{border-color:var(--brand);box-shadow:0 0 0 2px var(--brand) inset}
+  .back{border:0;background:none;color:var(--brand);cursor:pointer;font-size:14px;padding:0;margin-bottom:10px}
+  /* buttons */
+  .btn{border:0;border-radius:10px;padding:11px 18px;font-size:15px;font-weight:650;cursor:pointer}
+  .btn.primary{background:var(--brand);color:var(--brand-ink)}
+  .btn.ghost{background:var(--card);border:1px solid var(--line)}
+  .btn.danger{background:var(--danger);color:#fff}
+  .bookbar{position:fixed;left:0;right:0;bottom:64px;display:flex;justify-content:center;z-index:8;pointer-events:none}
+  .bookbar .btn{pointer-events:auto;box-shadow:0 6px 18px rgba(0,0,0,.18)}
+  /* legend */
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;color:var(--muted);margin-top:10px}
+  .legend i{display:inline-block;width:14px;height:14px;border-radius:4px;vertical-align:-2px;margin-right:5px;border:1px solid var(--line)}
+  /* modal */
+  .overlay{position:fixed;inset:0;background:rgba(20,26,34,.45);display:flex;align-items:flex-end;
+           justify-content:center;z-index:20}
+  .sheet{background:var(--card);border-radius:16px 16px 0 0;width:100%;max-width:520px;padding:20px;max-height:82vh;overflow-y:auto}
+  .sheet h2{margin:0 0 8px;font-size:17px}
+  .sheet .row{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--line);font-size:14px}
+  .sheet .row span:first-child{color:var(--muted)}
+  .sheet .actions{display:flex;gap:10px;margin-top:16px}
+  .sheet .actions .btn{flex:1}
+  .warnbox{background:var(--warn-bg);border:1px solid var(--warn-line);border-radius:10px;padding:10px 12px;
+           font-size:14px;margin:10px 0}
+  .okbox{background:var(--free);border:1px solid var(--free-line);border-radius:10px;padding:10px 12px;
+         font-size:14px;margin:10px 0}
+  .bk{border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px}
+  .bk .when{font-weight:650}
+  .bk .sub{color:var(--muted);font-size:13px;margin:2px 0 8px}
+  /* toast */
+  #toast{position:fixed;left:50%;transform:translateX(-50%);bottom:120px;background:#1c2430;color:#fff;
+         padding:10px 18px;border-radius:999px;font-size:14px;opacity:0;transition:opacity .25s;z-index:30;pointer-events:none;max-width:90vw;text-align:center}
+  /* variant switcher (prototype chrome, not part of the design) */
+  #switcher{position:fixed;left:50%;transform:translateX(-50%);bottom:12px;z-index:25;
+            background:#111827;color:#fff;border-radius:999px;display:flex;align-items:center;gap:4px;
+            padding:6px 8px;box-shadow:0 8px 24px rgba(0,0,0,.35);font-size:13px}
+  #switcher button{background:none;border:0;color:#fff;font-size:16px;cursor:pointer;padding:4px 10px}
+  #switcher .lbl{min-width:150px;text-align:center}
+</style>
+</head>
+<body>
+<div class="top" id="topbar"></div>
+<div class="wrap" id="app"></div>
+<div class="bookbar" id="bookbar"></div>
+<div id="modal"></div>
+<div id="toast"></div>
+<div id="switcher"></div>
+
+<script>
+"use strict";
+/* ---------- fake data (all fabricated) ---------- */
+const COURTS=["Court 1","Court 2","Court 3","Court 4"];
+const OPEN_H=6, CLOSE_H=22;                 // slots start 06:00 … 21:00
+const DAYS=14;                              // member horizon
+const CASUAL_DAYS=7, MEMBER_DAYS=14;
+const HOUR=3600e3, DAY=24*HOUR;
+const NOW=new Date();
+const day0=new Date(NOW); day0.setHours(0,0,0,0);
+
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);
+  t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+const rand=mulberry32(42);
+
+const taken=new Set(), blocks=new Set();
+const key=(d,h,c)=>d+"-"+h+"-"+c;
+for(let d=0;d<DAYS;d++)for(let h=OPEN_H;h<CLOSE_H;h++)for(let c=0;c<COURTS.length;c++){
+  const density=Math.max(.15,.55-d*.035)*(h>=17&&h<=20?1.5:1);   // evenings busier
+  if(rand()<Math.min(.85,density))taken.add(key(d,h,c));
+}
+for(let h=9;h<13;h++){blocks.add(key(2,h,2));taken.delete(key(2,h,2));}  // maintenance block
+
+/* my seeded bookings */
+let nextId=1;
+const bookings=[];  // {id,day,court,hours[],createdAt}
+function seedBooking(day,court,hours,createdAgoMs){
+  hours.forEach(h=>{taken.delete(key(day,h,court));});
+  bookings.push({id:nextId++,day,court,hours,createdAt:new Date(NOW-createdAgoMs)});
+}
+/* one booking ~3h from now (late-cancel demo), snapped to the next full hour */
+const soon=new Date(Math.ceil((NOW.getTime()+1e3)/HOUR)*HOUR+2*HOUR);
+const soonDay=Math.floor((soon-day0)/DAY);
+if(soonDay<DAYS)seedBooking(soonDay,0,[soon.getHours()],2*HOUR);
+/* one booking in 3 days, 19:00–21:00 (free-cancel demo) */
+seedBooking(3,1,[19,20],26*HOUR);
+
+/* ---------- app state ---------- */
+const state={
+  variant:(new URLSearchParams(location.search).get("variant")||"A").toUpperCase(),
+  viewer:"casual",           // 'casual' | 'member'
+  strikes:1,
+  banUntil:null,             // Date | null
+  selA:null,                 // {day,court,hours[]}
+  dayA:0,
+  selB:null,                 // {hours[]}
+  dayB:0,
+  c:{step:1,day:null,hour:null,dur:null},
+};
+if(!["A","B","C"].includes(state.variant))state.variant="A";
+const VARIANTS={A:"Full grid",B:"Time list",C:"Step by step"};
+
+/* ---------- helpers ---------- */
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]));
+function slotStart(d,h){return new Date(day0.getTime()+d*DAY+h*HOUR)}
+function fmtTime(h){return String(h).padStart(2,"0")+":00"}
+function fmtRange(hours){return fmtTime(hours[0])+"–"+fmtTime(hours[hours.length-1]+1)}
+function fmtDate(dt){return dt.toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"})}
+function dayLabel(d){if(d===0)return"Today";if(d===1)return"Tomorrow";return fmtDate(slotStart(d,0))}
+function horizonMs(){return(state.viewer==="member"?MEMBER_DAYS:CASUAL_DAYS)*DAY}
+function inHorizon(d,h){return slotStart(d,h)-NOW<=horizonMs()}
+function isPast(d,h){return slotStart(d,h)<=NOW}
+function dayLocked(d){return!inHorizon(d,CLOSE_H-1)}                       // whole last slot outside horizon
+function dayOpensOn(d){return new Date(slotStart(d,0)-CASUAL_DAYS*DAY)}    // when casuals can start booking it
+function isMine(d,h,c){return bookings.some(b=>b.day===d&&b.court===c&&b.hours.includes(h))}
+function freeCourtsAt(d,h){const out=[];for(let c=0;c<COURTS.length;c++)
+  if(!taken.has(key(d,h,c))&&!blocks.has(key(d,h,c))&&!isMine(d,h,c))out.push(c);return out}
+function banned(){return state.banUntil&&NOW<state.banUntil}
+function toast(msg){const t=$("#toast");t.textContent=msg;t.style.opacity=1;
+  clearTimeout(t._t);t._t=setTimeout(()=>t.style.opacity=0,2600)}
+
+/* ---------- booking / cancelling ---------- */
+function confirmSheet(day,court,hours,autoAssigned){
+  openModal(`
+    <h2>Confirm your booking</h2>
+    <div class="row"><span>Day</span><b>${esc(dayLabel(day))}</b></div>
+    <div class="row"><span>Time</span><b>${fmtRange(hours)} (${hours.length} hour${hours.length>1?"s":""})</b></div>
+    <div class="row"><span>Court</span><b>${esc(COURTS[court])}${autoAssigned?" (chosen for you)":""}</b></div>
+    <div class="row"><span>Payment</span><b>Pay at the venue</b></div>
+    <div class="okbox">Free cancel until 6 hours before start.</div>
+    <div class="actions">
+      <button class="btn ghost" onclick="closeModal()">Back</button>
+      <button class="btn primary" onclick="doBook(${day},${court},[${hours}])">Book now</button>
+    </div>`);
+}
+function doBook(day,court,hours){
+  bookings.push({id:nextId++,day,court,hours,createdAt:new Date()});
+  state.selA=null;state.selB=null;state.c={step:1,day:null,hour:null,dur:null};
+  closeModal();toast("Booked! "+dayLabel(day)+", "+fmtRange(hours)+", "+COURTS[court]);render();
+}
+function cancelClass(b){
+  const start=slotStart(b.day,b.hours[0]);
+  if(NOW>=start)return"started";
+  if(NOW-b.createdAt<=15*60e3)return"grace";
+  if(start-NOW>=6*HOUR)return"free";
+  return"late";
+}
+function askCancel(id){
+  const b=bookings.find(x=>x.id===id);const cls=cancelClass(b);
+  const what=`<div class="row"><span>Booking</span><b>${esc(dayLabel(b.day))}, ${fmtRange(b.hours)}, ${esc(COURTS[b.court])}</b></div>`;
+  if(cls==="late"){
+    openModal(`<h2>Cancel this booking?</h2>${what}
+      <div class="warnbox"><b>This will cost you 1 strike.</b><br>
+      It is less than 6 hours before start. You have ${state.strikes} strike${state.strikes===1?"":"s"} now.
+      3 strikes = no self-booking for 14 days.</div>
+      <div class="actions">
+        <button class="btn ghost" onclick="closeModal()">Keep booking</button>
+        <button class="btn danger" onclick="doCancel(${id},true)">Cancel anyway</button>
+      </div>`);
+  }else{
+    const note=cls==="grace"
+      ?"Free cancel — you made this booking less than 15 minutes ago."
+      :"Free cancel — it is more than 6 hours before start.";
+    openModal(`<h2>Cancel this booking?</h2>${what}
+      <div class="okbox">${note} No strike.</div>
+      <div class="actions">
+        <button class="btn ghost" onclick="closeModal()">Keep booking</button>
+        <button class="btn danger" onclick="doCancel(${id},false)">Cancel booking</button>
+      </div>`);
+  }
+}
+function doCancel(id,strike){
+  const i=bookings.findIndex(x=>x.id===id);const b=bookings[i];bookings.splice(i,1);
+  if(strike){
+    state.strikes++;
+    if(state.strikes>=3&&!banned()){
+      state.banUntil=new Date(NOW.getTime()+14*DAY);
+      toast("Cancelled. Strike added — you now have "+state.strikes+" strikes. Booking is blocked for 14 days.");
+    }else toast("Cancelled. 1 strike added ("+state.strikes+" of 3).");
+  }else toast("Cancelled. The slot is free again. No strike.");
+  closeModal();render();
+}
+function showBookings(){
+  const items=bookings.slice().sort((a,b)=>slotStart(a.day,a.hours[0])-slotStart(b.day,b.hours[0]))
+    .map(b=>{
+      const cls=cancelClass(b);
+      const note=cls==="started"?`<span class="sub">Already started — cannot cancel.</span>`
+        :cls==="late"?`<span class="sub" style="color:var(--danger)">Less than 6h before start — cancelling costs 1 strike.</span>`
+        :`<span class="sub">Free cancel.</span>`;
+      const btn=cls==="started"?"":`<button class="btn ghost" onclick="askCancel(${b.id})">Cancel</button>`;
+      return`<div class="bk"><div class="when">${esc(dayLabel(b.day))} · ${fmtRange(b.hours)}</div>
+        <div class="sub">${esc(COURTS[b.court])} · pay at the venue</div>${note}<div style="margin-top:8px">${btn}</div></div>`;
+    }).join("")||`<p class="hint">No bookings yet.</p>`;
+  const ban=banned()?`<div class="warnbox"><b>Booking is blocked until ${fmtDate(state.banUntil)}.</b><br>
+    You reached 3 strikes. Your bookings above are kept. The front desk can still book for you.</div>`:"";
+  openModal(`<h2>My bookings</h2>
+    <p class="hint">Strikes: <b>${state.strikes} of 3</b> (a strike is removed after 90 days)</p>${ban}${items}
+    <div class="actions"><button class="btn ghost" onclick="closeModal()">Close</button></div>`);
+}
+
+/* ---------- modal / chrome ---------- */
+function openModal(html){$("#modal").innerHTML=`<div class="overlay" onclick="if(event.target===this)closeModal()"><div class="sheet">${html}</div></div>`}
+function closeModal(){$("#modal").innerHTML=""}
+
+function renderTop(){
+  $("#topbar").innerHTML=`
+    <h1>Pickleball Courts</h1><span class="demo">DEMO — all data is fake</span>
+    <span class="spacer"></span>
+    <span class="seg" title="Prototype control: view the app as a casual player or a member">
+      <button class="${state.viewer==="casual"?"on":""}" onclick="setViewer('casual')">Casual</button>
+      <button class="${state.viewer==="member"?"on":""}" onclick="setViewer('member')">Member</button>
+    </span>
+    <span class="chip strike" title="Strikes in the last 90 days"><span class="dot"></span>Strikes: ${state.strikes}/3</span>
+    <button class="chip" onclick="showBookings()">My bookings (${bookings.length})</button>`;
+}
+function setViewer(v){state.viewer=v;state.selA=null;state.selB=null;state.c={step:1,day:null,hour:null,dur:null};render()}
+
+function renderSwitcher(){
+  $("#switcher").innerHTML=`
+    <button onclick="cycle(-1)" aria-label="previous variant">◀</button>
+    <span class="lbl">${state.variant} — ${VARIANTS[state.variant]}</span>
+    <button onclick="cycle(1)" aria-label="next variant">▶</button>`;
+}
+function cycle(dir){
+  const keys=Object.keys(VARIANTS);
+  state.variant=keys[(keys.indexOf(state.variant)+dir+keys.length)%keys.length];
+  try{history.replaceState(null,"","?variant="+state.variant)}catch(e){}
+  state.selA=null;state.selB=null;state.c={step:1,day:null,hour:null,dur:null};
+  render();
+}
+document.addEventListener("keydown",e=>{
+  if(/INPUT|TEXTAREA/.test(document.activeElement.tagName)||document.activeElement.isContentEditable)return;
+  if(e.key==="ArrowLeft")cycle(-1);if(e.key==="ArrowRight")cycle(1);
+});
+
+/* ---------- shared pieces ---------- */
+function banBanner(){return banned()
+  ?`<div class="banner"><b>You cannot book right now.</b> You reached 3 strikes, so self-booking is blocked until
+     <b>${fmtDate(state.banUntil)}</b>. Your existing bookings are kept. The front desk can still book for you.</div>`:""}
+function dayStrip(selected,onpick){
+  let out=`<div class="days">`;
+  for(let d=0;d<DAYS;d++){
+    if(dayLocked(d)){
+      out+=`<div class="day lock" title="Members only for now">
+        <div class="dow">${esc(dayLabel(d).split(" ")[0])}</div><div class="dnum">${slotStart(d,0).getDate()}</div>
+        <div class="locknote">🔒 Members only<br>opens ${esc(fmtDate(dayOpensOn(d)))}</div></div>`;
+    }else{
+      out+=`<div class="day ${selected===d?"sel":""}" onclick="${onpick}(${d})">
+        <div class="dow">${esc(dayLabel(d).split(" ")[0])}</div><div class="dnum">${slotStart(d,0).getDate()}</div>
+        <div class="dow">${esc(slotStart(d,0).toLocaleDateString("en-GB",{month:"short"}))}</div></div>`;
+    }
+  }
+  return out+`</div>
+  <p class="hint">${state.viewer==="member"
+    ?"As a member you can book all 14 days."
+    :"You can book 7 days ahead. Days with 🔒 are open to members only for now."}</p>`;
+}
+function bookButton(label,fn){$("#bookbar").innerHTML=label?`<button class="btn primary" onclick="${fn}()">${esc(label)}</button>`:""}
+
+/* ---------- Variant A: full grid ---------- */
+function pickDayA(d){state.dayA=d;state.selA=null;render()}
+function tapA(d,h,c){
+  if(banned())return toast("Booking is blocked until "+fmtDate(state.banUntil)+".");
+  const s=state.selA;
+  if(s&&s.day===d&&s.court===c){
+    if(s.hours.includes(h)){ s.hours.length===1?state.selA=null:s.hours=[h===s.hours[0]?s.hours[1]:s.hours[0]]; return render(); }
+    if(s.hours.length===1&&Math.abs(h-s.hours[0])===1){ s.hours=[Math.min(h,s.hours[0]),Math.max(h,s.hours[0])]; return render(); }
+  }
+  state.selA={day:d,court:c,hours:[h]};render();
+}
+function bookA(){const s=state.selA;if(s)confirmSheet(s.day,s.court,s.hours,false)}
+function renderA(){
+  const d=state.dayA;
+  let rows="";
+  for(let h=OPEN_H;h<CLOSE_H;h++){
+    rows+=`<tr><th>${fmtTime(h)}</th>`;
+    for(let c=0;c<COURTS.length;c++){
+      const sel=state.selA&&state.selA.day===d&&state.selA.court===c&&state.selA.hours.includes(h);
+      let cls="cell",txt="Free",dis="";
+      if(isPast(d,h)){cls+=" past";txt="–";dis="disabled"}
+      else if(blocks.has(key(d,h,c))){cls+=" block";txt="Closed";dis="disabled"}
+      else if(isMine(d,h,c)){cls+=" mine";txt="Yours";dis="disabled"}
+      else if(taken.has(key(d,h,c))){cls+=" taken";txt="Booked";dis="disabled"}
+      else if(!inHorizon(d,h)){cls+=" taken";txt="🔒";dis="disabled"}
+      if(sel){cls="cell sel";txt="✓";dis=""}
+      rows+=`<td><button class="${cls}" ${dis} onclick="tapA(${d},${h},${c})">${txt}</button></td>`;
+    }
+    rows+="</tr>";
+  }
+  $("#app").innerHTML=banBanner()+`
+    <div class="card"><b>1 · Pick a day</b>${dayStrip(d,"pickDayA")}</div>
+    <div class="card"><b>2 · Tap a free slot</b>
+      <p class="hint">Tap one slot for 1 hour. Tap the slot above or below it for 2 hours (the maximum).</p>
+      <div class="gridscroll"><table class="grid">
+        <tr><th></th>${COURTS.map(n=>`<th>${esc(n)}</th>`).join("")}</tr>${rows}
+      </table></div>
+      <div class="legend">
+        <span><i style="background:var(--free)"></i>Free</span>
+        <span><i style="background:var(--taken)"></i>Booked</span>
+        <span><i style="background:var(--mine)"></i>Yours</span>
+        <span><i style="background:repeating-linear-gradient(45deg,#eee,#eee 4px,#e2e2e2 4px,#e2e2e2 8px)"></i>Closed by the venue</span>
+      </div>
+    </div>`;
+  const s=state.selA;
+  bookButton(s?`Book ${COURTS[s.court]} · ${dayLabel(s.day)} · ${fmtRange(s.hours)}`:"", "bookA");
+}
+
+/* ---------- Variant B: time list (court chosen for you) ---------- */
+function pickDayB(d){state.dayB=d;state.selB=null;render()}
+function courtSpanning(d,hours){return freeCourtsAt(d,hours[0]).find(c=>hours.every(h=>freeCourtsAt(d,h).includes(c)))}
+function tapB(d,h){
+  if(banned())return toast("Booking is blocked until "+fmtDate(state.banUntil)+".");
+  const s=state.selB;
+  if(s&&s.hours.includes(h)){ s.hours.length===1?state.selB=null:s.hours=[h===s.hours[0]?s.hours[1]:s.hours[0]]; return render(); }
+  if(s&&s.hours.length===1&&Math.abs(h-s.hours[0])===1){
+    const hours=[Math.min(h,s.hours[0]),Math.max(h,s.hours[0])];
+    if(courtSpanning(d,hours)===undefined)return toast("No single court is free for both hours.");
+    s.hours=hours;return render();
+  }
+  state.selB={hours:[h]};render();
+}
+function bookB(){const s=state.selB;if(!s)return;
+  const c=courtSpanning(state.dayB,s.hours);
+  if(c===undefined)return toast("No single court is free for both hours.");
+  confirmSheet(state.dayB,c,s.hours,true);
+}
+function renderB(){
+  const d=state.dayB;
+  let rows="";
+  for(let h=OPEN_H;h<CLOSE_H;h++){
+    if(isPast(d,h)||!inHorizon(d,h))continue;
+    const free=freeCourtsAt(d,h).length;
+    const sel=state.selB&&state.selB.hours.includes(h);
+    rows+=`<div class="hrow ${free?"":"full"} ${sel?"sel":""}" onclick="${free?`tapB(${d},${h})`:""}">
+      <span class="t">${fmtTime(h)}</span>
+      <span class="free">${free?free+" court"+(free>1?"s":"")+" free":"Full"}</span>
+      <span class="pill ${free?"":"zero"}">${sel?"Selected ✓":free?"Tap to pick":"—"}</span></div>`;
+  }
+  $("#app").innerHTML=banBanner()+`
+    <div class="card"><b>1 · Pick a day</b>${dayStrip(d,"pickDayB")}</div>
+    <div class="card"><b>2 · Pick a time</b>
+      <p class="hint">All courts are the same, so you only pick a time — we give you a free court.
+      Tap one hour, or two hours next to each other.</p>
+      ${rows||`<p class="hint">No more free times on this day.</p>`}
+    </div>`;
+  const s=state.selB;
+  bookButton(s?`Book ${dayLabel(d)} · ${fmtRange(s.hours)}`:"", "bookB");
+}
+
+/* ---------- Variant C: step-by-step wizard ---------- */
+function cSet(part,val){
+  const c=state.c;
+  if(part==="day"){c.day=val;c.step=2}
+  if(part==="hour"){c.hour=val;c.step=3}
+  if(part==="dur"){c.dur=val;
+    const hours=val===2?[c.hour,c.hour+1]:[c.hour];
+    const court=courtSpanning(c.day,hours);
+    if(court===undefined)return toast("No single court is free for 2 hours here. Choose 1 hour.");
+    return confirmSheet(c.day,court,hours,true);
+  }
+  render();
+}
+function cBack(){const c=state.c;c.step=Math.max(1,c.step-1);if(c.step===1)c.day=null;if(c.step<=2)c.hour=null;render()}
+function renderC(){
+  const c=state.c;
+  const crumbs=`<div class="steps">
+    <span>${c.step===1?"<b>1 Day</b>":"1 "+(c.day!==null?esc(dayLabel(c.day)):"Day")}</span> ›
+    <span>${c.step===2?"<b>2 Time</b>":"2 "+(c.hour!==null?fmtTime(c.hour):"Time")}</span> ›
+    <span>${c.step===3?"<b>3 How long</b>":"3 How long"}</span></div>`;
+  let body="";
+  if(c.step===1){
+    body=`<b>Which day do you want to play?</b><div class="optlist" style="margin-top:10px">`;
+    for(let d=0;d<DAYS;d++){
+      const locked=dayLocked(d);
+      body+=`<button class="opt big" ${locked?"disabled":""} onclick="cSet('day',${d})">
+        <span>${esc(dayLabel(d))}</span>
+        <span class="free">${locked?"🔒 Members only — opens "+esc(fmtDate(dayOpensOn(d))):""}</span></button>`;
+    }
+    body+="</div>";
+  }else if(c.step===2){
+    body=`<button class="back" onclick="cBack()">‹ Back</button><br><b>What time on ${esc(dayLabel(c.day))}?</b>
+      <div class="optlist" style="margin-top:10px">`;
+    let any=false;
+    for(let h=OPEN_H;h<CLOSE_H;h++){
+      if(isPast(c.day,h)||!inHorizon(c.day,h)||!freeCourtsAt(c.day,h).length)continue;
+      any=true;body+=`<button class="opt" onclick="cSet('hour',${h})">${fmtTime(h)}</button>`;
+    }
+    if(!any)body+=`<p class="hint">Nothing free on this day.</p>`;
+    body+="</div>";
+  }else{
+    const two=courtSpanning(c.day,[c.hour,c.hour+1])!==undefined&&c.hour+1<CLOSE_H&&inHorizon(c.day,c.hour+1);
+    body=`<button class="back" onclick="cBack()">‹ Back</button><br><b>How long do you want to play?</b>
+      <div class="optlist" style="margin-top:10px">
+        <button class="opt" onclick="cSet('dur',1)">1 hour (${fmtTime(c.hour)}–${fmtTime(c.hour+1)})</button>
+        <button class="opt" ${two?"":"disabled"} onclick="cSet('dur',2)">2 hours (${fmtTime(c.hour)}–${fmtTime(c.hour+2)})${two?"":" — not free"}</button>
+      </div>
+      <p class="hint">We give you a free court — all courts are the same.</p>`;
+  }
+  $("#app").innerHTML=banBanner()+`<div class="card">${crumbs}${body}</div>`;
+  bookButton("");
+}
+
+/* ---------- render loop ---------- */
+function render(){
+  if(banned()&&state.banUntil<=NOW)state.banUntil=null;
+  renderTop();renderSwitcher();
+  ({A:renderA,B:renderB,C:renderC})[state.variant]();
+}
+render();
+</script>
+</body>
+</html>
