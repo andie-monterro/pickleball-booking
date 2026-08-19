@@ -9,18 +9,24 @@ const BASE_URL = "http://test.local";
 export function httpGet(
   route: { GET: RouteHandler },
   path: string,
+  headers?: HeadersInit,
 ): Promise<Response> {
-  return Promise.resolve(route.GET(new Request(new URL(path, BASE_URL))));
+  return Promise.resolve(
+    route.GET(new Request(new URL(path, BASE_URL), { headers })),
+  );
 }
 
 export function httpPost(
   route: { POST: RouteHandler },
   path: string,
   body?: unknown,
+  headers?: HeadersInit,
 ): Promise<Response> {
+  const requestHeaders = new Headers(headers);
+  requestHeaders.set("content-type", "application/json");
   const request = new Request(new URL(path, BASE_URL), {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: requestHeaders,
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   return Promise.resolve(route.POST(request));
