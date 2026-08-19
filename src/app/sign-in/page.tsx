@@ -12,7 +12,7 @@ export default async function SignInPage({ searchParams }: SignInPageProps) {
   let returnTo = "/";
   try {
     const candidate = new URL(requestedReturnTo, appOrigin);
-    if (candidate.origin === appOrigin) {
+    if (candidate.origin === appOrigin && !candidate.pathname.startsWith("//")) {
       returnTo = `${candidate.pathname}${candidate.search}${candidate.hash}`;
     }
   } catch {

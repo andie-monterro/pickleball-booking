@@ -74,11 +74,14 @@ describe("app shell", () => {
     expect(signInResponse.status).toBe(200);
   });
 
-  it("defaults an unsafe post-auth return target to the home page", async () => {
-    const response = await fetch(`${baseUrl}/sign-in?returnTo=%2F%5Cevil.example`);
-    const page = await response.text();
+  it.each(["/\\evil.example", "http://app.local//evil.example"])(
+    "defaults unsafe post-auth target %s to the home page",
+    async (unsafeTarget) => {
+      const response = await fetch(`${baseUrl}/sign-in?returnTo=${encodeURIComponent(unsafeTarget)}`);
+      const page = await response.text();
 
-    expect(response.status).toBe(200);
-    expect(page).toContain('\\"returnTo\\":\\"/\\"');
-  });
+      expect(response.status).toBe(200);
+      expect(page).toContain('\\"returnTo\\":\\"/\\"');
+    },
+  );
 });
