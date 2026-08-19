@@ -139,6 +139,36 @@ describe("phone OTP authentication", () => {
     expect(verifyResponse.headers.has("set-cookie")).toBe(false);
   });
 
+  it("reports when the SMS service is unavailable", async () => {
+    otp.failSending();
+
+    const response = await httpPost(signUpRoute, "/api/auth/signup/request-code", {
+      displayName: "Lan Nguyen",
+      phone: NEW_PHONE,
+    });
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "otp_unavailable" });
+  });
+
+  it("reports when the SMS service fails while checking a code", async () => {
+    const startResponse = await httpPost(signUpRoute, "/api/auth/signup/request-code", {
+      displayName: "Lan Nguyen",
+      phone: NEW_PHONE,
+    });
+    const { challengeId } = await startResponse.json();
+    const code = otp.latestCode(NEW_PHONE);
+    otp.failChecking();
+
+    const response = await httpPost(verifyRoute, "/api/auth/verify", {
+      challengeId,
+      code,
+    });
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "otp_unavailable" });
+  });
+
   it("rejects an expired OTP challenge", async () => {
     const startResponse = await httpPost(signUpRoute, "/api/auth/signup/request-code", {
       displayName: "Lan Nguyen",

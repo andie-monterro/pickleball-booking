@@ -44,6 +44,7 @@ const ERROR_MESSAGE: Record<string, string> = {
   invalid_code: "That code is not correct. Try again.",
   expired_code: "That code has expired. Request a new code.",
   invalid_challenge: "This code request is no longer valid. Request a new code.",
+  otp_unavailable: "SMS verification is unavailable. Please try again later.",
 };
 
 function messageFor(error: unknown): string {

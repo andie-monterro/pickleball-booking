@@ -124,9 +124,9 @@ async function createChallenge(
 
   try {
     await getOtpProvider().sendCode(phone);
-  } catch (error) {
+  } catch {
     await pool.query("delete from auth_challenges where id = $1", [id]);
-    throw error;
+    throw new AuthError("otp_unavailable", 503);
   }
 
   return { challengeId: id, expiresAt: expiresAt.toISOString() };
@@ -241,7 +241,13 @@ export async function verifyOtp(input: unknown): Promise<VerifiedSession> {
     [body.challengeId],
   );
   const challenge = activeChallenge(challengeResult.rows[0], clock.now());
-  if (!(await getOtpProvider().checkCode(challenge.phone, body.code))) {
+  let codeMatches: boolean;
+  try {
+    codeMatches = await getOtpProvider().checkCode(challenge.phone, body.code);
+  } catch {
+    throw new AuthError("otp_unavailable", 503);
+  }
+  if (!codeMatches) {
     throw new AuthError("invalid_code", 400);
   }
 
