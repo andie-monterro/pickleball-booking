@@ -1,5 +1,4 @@
 import { readAvailability, type SlotStatus } from "@/lib/availability";
-import { AuthPanel } from "@/components/auth-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -26,32 +25,13 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   return (
     <main
       style={{
-        fontFamily: "system-ui, sans-serif",
+        boxSizing: "border-box",
         margin: "0 auto",
         maxWidth: "96rem",
-        padding: "clamp(1rem, 4vw, 2rem)",
+        padding: "clamp(1.5rem, 4vw, 2rem)",
+        width: "100%",
       }}
     >
-      <header
-        style={{
-          alignItems: "flex-start",
-          display: "flex",
-          flexWrap: "wrap",
-          gap: "1.5rem",
-          justifyContent: "space-between",
-          marginBottom: "2rem",
-        }}
-      >
-        <div style={{ flex: "1 1 24rem" }}>
-          <h1 style={{ marginTop: 0 }}>Pickleball Booking</h1>
-          <p style={{ color: "#475467", lineHeight: 1.5, maxWidth: "42rem" }}>
-            Court availability is public. Sign in only when you want to book.
-            Times use {availability.timeZone}. Current venue time is{" "}
-            {availability.currentVenueTime}.
-          </p>
-        </div>
-        <AuthPanel />
-      </header>
 
       <nav aria-label="Choose a day" style={{ display: "flex", gap: "0.75rem", overflowX: "auto", paddingBottom: "1rem" }}>
         {availability.days.map((day) => (

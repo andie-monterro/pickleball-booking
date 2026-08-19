@@ -12,6 +12,10 @@ type Player = {
 type AuthMode = "signup" | "sign-in";
 type AuthStep = "details" | "code";
 
+type AuthPanelProps = {
+  returnTo?: string;
+};
+
 const AUTH_MODE_CONFIG: Record<
   AuthMode,
   {
@@ -49,7 +53,7 @@ function messageFor(error: unknown): string {
   return "Something went wrong. Please try again.";
 }
 
-export function AuthPanel() {
+export function AuthPanel({ returnTo = "/" }: AuthPanelProps) {
   const [player, setPlayer] = useState<Player | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
   const [sessionError, setSessionError] = useState(false);
@@ -150,8 +154,7 @@ export function AuthPanel() {
         setMessage(messageFor(body.error));
         return;
       }
-      setPlayer(body.player);
-      setMessage("");
+      window.location.assign(returnTo);
     } catch {
       setMessage(messageFor(null));
     } finally {

@@ -291,10 +291,10 @@ export async function readPlayerSession(request: Request): Promise<Player | null
     ?.split(";")
     .map((part) => part.trim())
     .find((part) => part.startsWith(`${SESSION_COOKIE_NAME}=`));
-  if (!cookie) {
-    return null;
-  }
-  const sessionToken = cookie.slice(SESSION_COOKIE_NAME.length + 1);
+  return readPlayerSessionToken(cookie?.slice(SESSION_COOKIE_NAME.length + 1));
+}
+
+export async function readPlayerSessionToken(sessionToken: string | undefined): Promise<Player | null> {
   if (!sessionToken) {
     return null;
   }

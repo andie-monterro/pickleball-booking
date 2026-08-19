@@ -1,0 +1,30 @@
+.main {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(18rem, 23rem);
+  align-items: start;
+  gap: clamp(1.5rem, 6vw, 5rem);
+  width: 100%;
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: clamp(2rem, 8vw, 5rem) clamp(1rem, 4vw, 2rem);
+}
+
+.intro h2 {
+  margin: 0;
+  font-size: clamp(1.75rem, 6vw, 2.75rem);
+  line-height: 1.15;
+}
+
+.intro p {
+  max-width: 34rem;
+  color: #475467;
+  font-size: 1.05rem;
+  line-height: 1.6;
+}
+
+@media (max-width: 44rem) {
+  .main {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
