@@ -1,18 +1,12 @@
 import { readAvailability, type SlotStatus } from "@/lib/availability";
 
-const STATUS_LABEL: Record<SlotStatus, string> = {
-  free: "Free",
-  taken: "Taken",
-  blocked: "Blocked",
-  outside_horizon: "Outside horizon",
-};
-
 const STATUS_COLOR: Record<SlotStatus, string> = {
   free: "#ecfdf3",
   taken: "#fee4e2",
   blocked: "#e4e7ec",
   outside_horizon: "#eff4ff",
 };
+
 
 type HomePageProps = {
   searchParams?: Promise<{ date?: string | string[] }>;
@@ -79,7 +73,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
                         whiteSpace: "nowrap",
                       }}
                     >
-                      {slot ? STATUS_LABEL[slot.status] : "Closed"}
+                      {slot ? slot.label : "Closed"}
                     </td>
                   );
                 })}

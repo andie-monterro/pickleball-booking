@@ -83,6 +83,30 @@ describe("GET /api/availability", () => {
     });
   });
 
+  it("labels past Slots without changing the outside-horizon API status", async () => {
+    setClock(fixedClock(new Date("2026-08-19T14:00:00+07:00")));
+
+    const response = await httpGet(availabilityRoute, "/api/availability?date=2026-08-19");
+
+    const body = await response.json();
+    expect(body.slots).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          courtName: "Court 1",
+          hour: "13:00",
+          status: "outside_horizon",
+          label: "Past",
+        }),
+        expect.objectContaining({
+          courtName: "Court 1",
+          hour: "18:00",
+          status: "free",
+          label: "Free",
+        }),
+      ]),
+    );
+  });
+
   it("marks days 8 through 14 as member-only with their casual open date", async () => {
     const response = await httpGet(availabilityRoute, "/api/availability?date=2026-08-19");
 

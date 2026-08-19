@@ -6,6 +6,7 @@ const HO_CHI_MINH_UTC_OFFSET_HOURS = 7;
 
 type ClaimKind = "booking" | "block";
 export type SlotStatus = "free" | "taken" | "blocked" | "outside_horizon";
+export type SlotLabel = "Free" | "Taken" | "Blocked" | "Past" | "Outside horizon";
 
 export interface AvailabilityDay {
   date: string;
@@ -24,6 +25,7 @@ export interface AvailabilitySlot {
   hour: string;
   start: string;
   status: SlotStatus;
+  label: SlotLabel;
 }
 
 export interface AvailabilityResponse {
@@ -97,13 +99,17 @@ export async function readAvailability(dateParam?: string): Promise<Availability
 
   const casualHorizonEnd = new Date(now.getTime() + settings.casual_horizon_days * 86_400_000);
   const slots = courts.flatMap((court) =>
-    slotStarts.map((start, index) => ({
-      courtId: court.id,
-      courtName: court.name,
-      hour: formatHour(hours[index]),
-      start: start.toISOString(),
-      status: slotStatus(start, now, casualHorizonEnd, claimByCourtAndStart.get(claimKey(court.id, start))),
-    })),
+    slotStarts.map((start, index) => {
+      const status = slotStatus(start, now, casualHorizonEnd, claimByCourtAndStart.get(claimKey(court.id, start)));
+      return {
+        courtId: court.id,
+        courtName: court.name,
+        hour: formatHour(hours[index]),
+        start: start.toISOString(),
+        status,
+        label: slotLabel(status, start, now),
+      };
+    }),
   );
 
   return {
@@ -221,6 +227,19 @@ function slotStatus(
     return "outside_horizon";
   }
   return "free";
+}
+
+function slotLabel(status: SlotStatus, start: Date, now: Date): SlotLabel {
+  if (status === "taken") {
+    return "Taken";
+  }
+  if (status === "blocked") {
+    return "Blocked";
+  }
+  if (status === "free") {
+    return "Free";
+  }
+  return start <= now ? "Past" : "Outside horizon";
 }
 
 function claimKey(courtId: number, start: Date): string {
