@@ -6,21 +6,30 @@ type RouteHandler = (request: Request) => Response | Promise<Response>;
 
 const BASE_URL = "http://test.local";
 
+export interface HttpOptions {
+  headers?: Record<string, string>;
+}
+
 export function httpGet(
   route: { GET: RouteHandler },
   path: string,
+  options?: HttpOptions,
 ): Promise<Response> {
-  return Promise.resolve(route.GET(new Request(new URL(path, BASE_URL))));
+  const request = new Request(new URL(path, BASE_URL), {
+    headers: options?.headers,
+  });
+  return Promise.resolve(route.GET(request));
 }
 
 export function httpPost(
   route: { POST: RouteHandler },
   path: string,
   body?: unknown,
+  options?: HttpOptions,
 ): Promise<Response> {
   const request = new Request(new URL(path, BASE_URL), {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...options?.headers },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   return Promise.resolve(route.POST(request));
