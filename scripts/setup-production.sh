@@ -222,7 +222,11 @@ pause "Deployed? Press Enter to continue"
 stage "Verify — health check on the production URL"
 step "On the deployment success screen, copy the production domain"
 step "  (something like pickleball-booking.vercel.app)."
-ask PROD_DOMAIN "Production domain (without https://):"
+ask PROD_DOMAIN "Production domain (URL is fine too):"
+# Accept a full URL: strip the scheme and anything after the host.
+PROD_DOMAIN="${PROD_DOMAIN#https://}"
+PROD_DOMAIN="${PROD_DOMAIN#http://}"
+PROD_DOMAIN="${PROD_DOMAIN%%/*}"
 say "Checking https://${PROD_DOMAIN}/api/health ..."
 ok=0
 for _ in 1 2 3 4 5 6; do
