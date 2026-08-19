@@ -230,7 +230,6 @@ describe("phone OTP authentication", () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("PRELUDE_API_KEY", "");
     resetOtpProvider();
-    const consoleOutput = vi.spyOn(console, "info").mockImplementation(() => {});
 
     const startResponse = await httpPost(signUpRoute, "/api/auth/signup/request-code", {
       displayName: "Lan Nguyen",
@@ -238,15 +237,14 @@ describe("phone OTP authentication", () => {
     });
 
     expect(startResponse.status).toBe(202);
-    const logLine = String(consoleOutput.mock.calls[0]?.[0]);
-    const code = logLine.match(/\b\d{6}\b/)?.[0];
-    expect(code).toBeDefined();
-    const { challengeId } = await startResponse.json();
+    const body: { challengeId: string; debugCode?: string } =
+      await startResponse.json();
+    expect(body.debugCode).toMatch(/^\d{6}$/);
     resetOtpProvider();
 
     const verifyResponse = await httpPost(verifyRoute, "/api/auth/verify", {
-      challengeId,
-      code,
+      challengeId: body.challengeId,
+      code: body.debugCode,
     });
     expect(verifyResponse.status).toBe(200);
   });

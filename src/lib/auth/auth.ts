@@ -20,6 +20,7 @@ export type Player = {
 type Challenge = {
   challengeId: string;
   expiresAt: string;
+  debugCode?: string;
 };
 
 type VerifiedSession = {
@@ -122,14 +123,19 @@ async function createChallenge(
     [id, flow, phone, displayName, expiresAt, createdAt],
   );
 
+  let debugCode: string | undefined;
   try {
-    await getOtpProvider().sendCode(phone);
+    ({ debugCode } = await getOtpProvider().sendCode(phone));
   } catch {
     await pool.query("delete from auth_challenges where id = $1", [id]);
     throw new AuthError("otp_unavailable", 503);
   }
 
-  return { challengeId: id, expiresAt: expiresAt.toISOString() };
+  return {
+    challengeId: id,
+    expiresAt: expiresAt.toISOString(),
+    ...(debugCode ? { debugCode } : {}),
+  };
 }
 
 export async function requestSignupCode(input: unknown): Promise<Challenge> {

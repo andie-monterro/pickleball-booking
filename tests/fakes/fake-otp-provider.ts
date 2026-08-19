@@ -1,4 +1,6 @@
-export class FakeOtpProvider {
+import type { OtpDelivery, OtpProvider } from "@/lib/auth/otp-provider";
+
+export class FakeOtpProvider implements OtpProvider {
   private sequence = 100000;
   private readonly codes = new Map<string, string>();
   private sendFailure: Error | null = null;
@@ -14,12 +16,13 @@ export class FakeOtpProvider {
     this.checkFailure = error;
   }
 
-  async sendCode(phone: string): Promise<void> {
+  async sendCode(phone: string): Promise<OtpDelivery> {
     if (this.sendFailure) {
       throw this.sendFailure;
     }
     this.sequence += 1;
     this.codes.set(phone, String(this.sequence));
+    return {};
   }
 
   async checkCode(phone: string, code: string): Promise<boolean> {

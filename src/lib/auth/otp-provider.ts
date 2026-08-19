@@ -1,7 +1,11 @@
 import { createHmac } from "node:crypto";
 
+export type OtpDelivery = {
+  debugCode?: string;
+};
+
 export interface OtpProvider {
-  sendCode(phone: string): Promise<void>;
+  sendCode(phone: string): Promise<OtpDelivery>;
   checkCode(phone: string, code: string): Promise<boolean>;
 }
 
@@ -33,7 +37,7 @@ class PreludeOtpProvider implements OtpProvider {
     return response;
   }
 
-  async sendCode(phone: string): Promise<void> {
+  async sendCode(phone: string): Promise<OtpDelivery> {
     const response = await this.post("", {
       target: { type: "phone_number", value: phone },
       options: { method: "message" },
@@ -50,6 +54,7 @@ class PreludeOtpProvider implements OtpProvider {
     ) {
       throw new Error("OTP delivery provider did not send a code");
     }
+    return {};
   }
 
   async checkCode(phone: string, code: string): Promise<boolean> {
@@ -78,9 +83,9 @@ class ConsoleOtpProvider implements OtpProvider {
     return String(digest.readUInt32BE(0) % 1000000).padStart(6, "0");
   }
 
-  async sendCode(phone: string): Promise<void> {
+  async sendCode(phone: string): Promise<OtpDelivery> {
     const code = this.codeAt(phone, Date.now());
-    console.info(`[console OTP] ***${phone.slice(-4)}: ${code}`);
+    return { debugCode: code };
   }
 
   async checkCode(phone: string, code: string): Promise<boolean> {

@@ -124,10 +124,17 @@ export function AuthPanel({ returnTo = "/" }: AuthPanelProps) {
           ...(modeConfig.collectsDisplayName ? { displayName } : {}),
         }),
       });
-      const body: { challengeId?: string; error?: string } = await response.json();
+      const body: {
+        challengeId?: string;
+        debugCode?: string;
+        error?: string;
+      } = await response.json();
       if (!response.ok || !body.challengeId) {
         setMessage(messageFor(body.error));
         return;
+      }
+      if (body.debugCode) {
+        console.warn(`[OTP debug] Verification code: ${body.debugCode}`);
       }
       setChallengeId(body.challengeId);
       setCode("");
