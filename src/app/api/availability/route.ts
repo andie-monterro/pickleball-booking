@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { readAvailability } from "@/lib/availability";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(request: Request): Promise<Response> {
   const date = new URL(request.url).searchParams.get("date") ?? undefined;
 

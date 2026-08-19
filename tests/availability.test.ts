@@ -52,6 +52,7 @@ describe("GET /api/availability", () => {
     expect(body).toMatchObject({
       date: "2026-08-19",
       timeZone: "Asia/Ho_Chi_Minh",
+      currentVenueTime: "05:00",
       viewer: "casual",
       horizons: { casualDays: 7, memberDays: 14 },
     });

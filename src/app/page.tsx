@@ -1,5 +1,7 @@
 import { readAvailability, type SlotStatus } from "@/lib/availability";
 
+export const dynamic = "force-dynamic";
+
 const STATUS_COLOR: Record<SlotStatus, string> = {
   free: "#ecfdf3",
   taken: "#fee4e2",
@@ -23,7 +25,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   return (
     <main style={{ fontFamily: "system-ui, sans-serif", padding: "2rem" }}>
       <h1>Pickleball Booking</h1>
-      <p>Public court availability. No sign-in is needed.</p>
+      <p>Public court availability. No sign-in is needed. Times use {availability.timeZone}. Current venue time is {availability.currentVenueTime}.</p>
 
       <nav aria-label="Choose a day" style={{ display: "flex", gap: "0.75rem", overflowX: "auto", paddingBottom: "1rem" }}>
         {availability.days.map((day) => (

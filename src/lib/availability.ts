@@ -3,6 +3,12 @@ import { getPool } from "@/lib/db";
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const HO_CHI_MINH_UTC_OFFSET_HOURS = 7;
+const VENUE_TIME_FORMATTER = new Intl.DateTimeFormat("en-GB", {
+  timeZone: VENUE_TIME_ZONE,
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
 
 type ClaimKind = "booking" | "block";
 export type SlotStatus = "free" | "taken" | "blocked" | "outside_horizon";
@@ -31,6 +37,7 @@ export interface AvailabilitySlot {
 export interface AvailabilityResponse {
   date: string;
   timeZone: string;
+  currentVenueTime: string;
   viewer: "casual";
   horizons: {
     casualDays: number;
@@ -115,6 +122,7 @@ export async function readAvailability(dateParam?: string): Promise<Availability
   return {
     date: date.key,
     timeZone: settings.venue_time_zone,
+    currentVenueTime: VENUE_TIME_FORMATTER.format(now),
     viewer: "casual",
     horizons: {
       casualDays: settings.casual_horizon_days,
