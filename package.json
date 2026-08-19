@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "next dev",
+    "dev:otp": "OTP_PROVIDER=console next dev",
     "build": "next build",
     "vercel-build": "npm run migrate:up && next build",
     "start": "next start",

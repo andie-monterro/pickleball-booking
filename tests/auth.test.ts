@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as meRoute from "@/app/api/auth/me/route";
 import * as signInRoute from "@/app/api/auth/sign-in/request-code/route";
 import * as signUpRoute from "@/app/api/auth/signup/request-code/route";
@@ -37,6 +37,8 @@ describe("phone OTP authentication", () => {
 
   afterEach(() => {
     resetOtpProvider();
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
     resetClock();
   });
 
@@ -220,5 +222,46 @@ describe("phone OTP authentication", () => {
     });
     expect(invalidResponse.status).toBe(401);
     expect(await invalidResponse.json()).toEqual({ error: "unauthorized" });
+  });
+
+  it("supports manual signup with an OTP printed by the console provider", async () => {
+    vi.stubEnv("OTP_PROVIDER", "console");
+    vi.stubEnv("PRELUDE_API_KEY", "");
+    resetOtpProvider();
+    const consoleOutput = vi.spyOn(console, "info").mockImplementation(() => {});
+
+    const startResponse = await httpPost(signUpRoute, "/api/auth/signup/request-code", {
+      displayName: "Lan Nguyen",
+      phone: NEW_PHONE,
+    });
+
+    expect(startResponse.status).toBe(202);
+    const logLine = String(consoleOutput.mock.calls[0]?.[0]);
+    const code = logLine.match(/\b\d{6}\b/)?.[0];
+    expect(code).toBeDefined();
+    const { challengeId } = await startResponse.json();
+
+    const verifyResponse = await httpPost(verifyRoute, "/api/auth/verify", {
+      challengeId,
+      code,
+    });
+    expect(verifyResponse.status).toBe(200);
+  });
+
+  it("refuses to enable console OTP in production", async () => {
+    vi.stubEnv("OTP_PROVIDER", "console");
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("PRELUDE_API_KEY", "");
+    resetOtpProvider();
+    const consoleOutput = vi.spyOn(console, "info").mockImplementation(() => {});
+
+    const response = await httpPost(signUpRoute, "/api/auth/signup/request-code", {
+      displayName: "Lan Nguyen",
+      phone: NEW_PHONE,
+    });
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "otp_unavailable" });
+    expect(consoleOutput).not.toHaveBeenCalled();
   });
 });

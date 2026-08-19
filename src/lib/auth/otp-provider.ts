@@ -1,3 +1,5 @@
+import { randomInt } from "node:crypto";
+
 export interface OtpProvider {
   sendCode(phone: string): Promise<void>;
   checkCode(phone: string, code: string): Promise<boolean>;
@@ -64,10 +66,39 @@ class PreludeOtpProvider implements OtpProvider {
   }
 }
 
+class ConsoleOtpProvider implements OtpProvider {
+  private readonly codes = new Map<string, string>();
+
+  async sendCode(phone: string): Promise<void> {
+    const code = String(randomInt(100000, 1000000));
+    this.codes.set(phone, code);
+    console.info(`[local OTP] ${phone}: ${code}`);
+  }
+
+  async checkCode(phone: string, code: string): Promise<boolean> {
+    if (this.codes.get(phone) !== code) {
+      return false;
+    }
+    this.codes.delete(phone);
+    return true;
+  }
+}
+
+function createOtpProvider(): OtpProvider {
+  const providerName = process.env.OTP_PROVIDER ?? "prelude";
+  if (providerName === "prelude") {
+    return new PreludeOtpProvider();
+  }
+  if (providerName === "console" && process.env.NODE_ENV !== "production") {
+    return new ConsoleOtpProvider();
+  }
+  throw new Error(`OTP provider ${providerName} is not available`);
+}
+
 let currentProvider: OtpProvider | undefined;
 
 export function getOtpProvider(): OtpProvider {
-  currentProvider ??= new PreludeOtpProvider();
+  currentProvider ??= createOtpProvider();
   return currentProvider;
 }
 
