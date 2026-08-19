@@ -104,10 +104,11 @@ export async function readAvailability(dateParam?: string): Promise<Availability
     claimByCourtAndStart.set(claimKey(claim.court_id, claim.slot_starts_at), claim.source_kind);
   }
 
-  const casualHorizonEnd = new Date(now.getTime() + settings.casual_horizon_days * 86_400_000);
+  const casualHorizonEnd = addDays(today, settings.casual_horizon_days - 1);
+  const insideCasualHorizon = date.key >= today.key && date.key <= casualHorizonEnd.key;
   const slots = courts.flatMap((court) =>
     slotStarts.map((start, index) => {
-      const status = slotStatus(start, now, casualHorizonEnd, claimByCourtAndStart.get(claimKey(court.id, start)));
+      const status = slotStatus(insideCasualHorizon, claimByCourtAndStart.get(claimKey(court.id, start)));
       return {
         courtId: court.id,
         courtName: court.name,
@@ -204,7 +205,7 @@ function dayStrip(today: VenueDate, casualDays: number, memberDays: number): Ava
     return {
       date: date.key,
       memberOnly: true,
-      opensToEveryoneOn: addDays(date, -casualDays).key,
+      opensToEveryoneOn: addDays(date, 1 - casualDays).key,
     };
   });
 }
@@ -219,20 +220,15 @@ function hoursFor(rows: OpeningHoursRow[]): number[] {
   return hours;
 }
 
-function slotStatus(
-  start: Date,
-  now: Date,
-  casualHorizonEnd: Date,
-  claim: ClaimKind | undefined,
-): SlotStatus {
+function slotStatus(insideCasualHorizon: boolean, claim: ClaimKind | undefined): SlotStatus {
+  if (!insideCasualHorizon) {
+    return "outside_horizon";
+  }
   if (claim === "booking") {
     return "taken";
   }
   if (claim === "block") {
     return "blocked";
-  }
-  if (start <= now || start > casualHorizonEnd) {
-    return "outside_horizon";
   }
   return "free";
 }
@@ -245,9 +241,9 @@ function slotLabel(status: SlotStatus, start: Date, now: Date): SlotLabel {
     return "Blocked";
   }
   if (status === "free") {
-    return "Free";
+    return start <= now ? "Past" : "Free";
   }
-  return start <= now ? "Past" : "Outside horizon";
+  return "Outside horizon";
 }
 
 function claimKey(courtId: number, start: Date): string {

@@ -6,6 +6,21 @@ import { httpGet } from "./harness/http";
 
 const SEED_COURTS = ["Court 1", "Court 2", "Court 3", "Court 4"];
 
+type AvailabilityBody = {
+  slots: Array<{ courtName: string; hour: string; status: string }>;
+};
+
+async function expectOnlySlotStatus(
+  date: string,
+  expectedStatus: "free" | "outside_horizon",
+): Promise<AvailabilityBody> {
+  const response = await httpGet(availabilityRoute, `/api/availability?date=${date}`);
+  expect(response.status).toBe(200);
+  const body: AvailabilityBody = await response.json();
+  expect(new Set(body.slots.map((slot) => slot.status))).toEqual(new Set([expectedStatus]));
+  return body;
+}
+
 async function resetVenueData(): Promise<void> {
   const pool = getPool();
   await pool.query("delete from slot_claims");
@@ -84,18 +99,19 @@ describe("GET /api/availability", () => {
     });
   });
 
-  it("labels past Slots without changing the outside-horizon API status", async () => {
+  it("keeps every Slot on today inside the casual horizon while labeling elapsed Slots as past", async () => {
     setClock(fixedClock(new Date("2026-08-19T14:00:00+07:00")));
 
     const response = await httpGet(availabilityRoute, "/api/availability?date=2026-08-19");
 
     const body = await response.json();
+    expect(new Set(body.slots.map((slot: { status: string }) => slot.status))).toEqual(new Set(["free"]));
     expect(body.slots).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           courtName: "Court 1",
           hour: "13:00",
-          status: "outside_horizon",
+          status: "free",
           label: "Past",
         }),
         expect.objectContaining({
@@ -108,42 +124,83 @@ describe("GET /api/availability", () => {
     );
   });
 
-  it("marks days 8 through 14 as member-only with their casual open date", async () => {
+  it("marks member-only dates with the venue date when they open to casual players", async () => {
     const response = await httpGet(availabilityRoute, "/api/availability?date=2026-08-19");
 
     const body = await response.json();
     expect(body.days).toHaveLength(14);
     expect(body.days.slice(0, 7).every((day: { memberOnly: boolean }) => !day.memberOnly)).toBe(true);
     expect(body.days.slice(7).map((day: { date: string; memberOnly: boolean; opensToEveryoneOn: string }) => day)).toEqual([
-      { date: "2026-08-26", memberOnly: true, opensToEveryoneOn: "2026-08-19" },
-      { date: "2026-08-27", memberOnly: true, opensToEveryoneOn: "2026-08-20" },
-      { date: "2026-08-28", memberOnly: true, opensToEveryoneOn: "2026-08-21" },
-      { date: "2026-08-29", memberOnly: true, opensToEveryoneOn: "2026-08-22" },
-      { date: "2026-08-30", memberOnly: true, opensToEveryoneOn: "2026-08-23" },
-      { date: "2026-08-31", memberOnly: true, opensToEveryoneOn: "2026-08-24" },
-      { date: "2026-09-01", memberOnly: true, opensToEveryoneOn: "2026-08-25" },
+      { date: "2026-08-26", memberOnly: true, opensToEveryoneOn: "2026-08-20" },
+      { date: "2026-08-27", memberOnly: true, opensToEveryoneOn: "2026-08-21" },
+      { date: "2026-08-28", memberOnly: true, opensToEveryoneOn: "2026-08-22" },
+      { date: "2026-08-29", memberOnly: true, opensToEveryoneOn: "2026-08-23" },
+      { date: "2026-08-30", memberOnly: true, opensToEveryoneOn: "2026-08-24" },
+      { date: "2026-08-31", memberOnly: true, opensToEveryoneOn: "2026-08-25" },
+      { date: "2026-09-01", memberOnly: true, opensToEveryoneOn: "2026-08-26" },
     ]);
   });
 
-  it("applies the casual horizon at each Slot instant", async () => {
+  it("returns one horizon status for every Slot on each date in the member day strip", async () => {
     setClock(fixedClock(new Date("2026-08-19T12:00:00+07:00")));
+    const casualDates = [
+      "2026-08-19",
+      "2026-08-20",
+      "2026-08-21",
+      "2026-08-22",
+      "2026-08-23",
+      "2026-08-24",
+      "2026-08-25",
+    ];
+    const memberOnlyDates = [
+      "2026-08-26",
+      "2026-08-27",
+      "2026-08-28",
+      "2026-08-29",
+      "2026-08-30",
+      "2026-08-31",
+      "2026-09-01",
+    ];
 
-    const response = await httpGet(availabilityRoute, "/api/availability?date=2026-08-26");
+    for (const date of casualDates) {
+      await expectOnlySlotStatus(date, "free");
+    }
 
-    const body = await response.json();
-    expect(body.slots).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ courtName: "Court 1", hour: "12:00", status: "free" }),
-        expect.objectContaining({ courtName: "Court 1", hour: "13:00", status: "outside_horizon" }),
-      ]),
+    for (const date of memberOnlyDates) {
+      await expectOnlySlotStatus(date, "outside_horizon");
+    }
+  });
+
+  it("shifts the whole casual player Booking Horizon when venue midnight passes", async () => {
+    setClock(fixedClock(new Date("2026-08-19T23:59:59+07:00")));
+    await expectOnlySlotStatus("2026-08-26", "outside_horizon");
+
+    setClock(fixedClock(new Date("2026-08-20T00:00:00+07:00")));
+    const afterMidnightBody = await expectOnlySlotStatus("2026-08-26", "free");
+    expect(afterMidnightBody.slots).toContainEqual(
+      expect.objectContaining({ courtName: "Court 1", hour: "21:00", status: "free" }),
     );
   });
 
   it("distinguishes free, taken, blocked, and outside-horizon Slots", async () => {
     const pool = getPool();
     await pool.query(
-      "insert into slot_claims (court_id, slot_starts_at, source_kind, source_id) values ($1, $2, $3, $4), ($5, $6, $7, $8)",
-      [1, "2026-08-18T23:00:00.000Z", "booking", "booking-1", 2, "2026-08-19T00:00:00.000Z", "block", "block-1"],
+      `insert into slot_claims (court_id, slot_starts_at, source_kind, source_id)
+       values ($1, $2, $3, $4), ($5, $6, $7, $8), ($9, $10, $11, $12)`,
+      [
+        1,
+        "2026-08-18T23:00:00.000Z",
+        "booking",
+        "booking-1",
+        2,
+        "2026-08-19T00:00:00.000Z",
+        "block",
+        "block-1",
+        1,
+        "2026-08-25T23:00:00.000Z",
+        "booking",
+        "member-booking",
+      ],
     );
 
     const response = await httpGet(availabilityRoute, "/api/availability?date=2026-08-26");
