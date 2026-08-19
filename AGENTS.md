@@ -1,6 +1,6 @@
 # pickleball-booking
 
-Court booking app for a pickleball venue — see availability, book/cancel slots, no double-bookings. Tech stack: not decided yet — do not assume one.
+Court booking app for a pickleball venue — see availability, book/cancel slots, no double-bookings. Tech stack: full-stack Next.js (TypeScript) on Vercel, Postgres on Neon, phone OTP via SpeedSMS with Twilio fallback — see `docs/adr/0002-nextjs-vercel-neon-stack.md`.
 
 ## Language for the human
 
