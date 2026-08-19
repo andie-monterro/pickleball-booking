@@ -13,14 +13,14 @@ type HomePageProps = {
 export default async function HomePage({ searchParams }: HomePageProps) {
   const params = await searchParams;
   const date = typeof params?.date === "string" ? params.date : undefined;
-  const [availability, cookieStore] = await Promise.all([
-    readAvailability(date),
-    cookies(),
-  ]);
+  const cookieStore = await cookies();
   const player = await readPlayerSessionToken(
     cookieStore.get(SESSION_COOKIE_NAME)?.value,
   );
-  const bookings = player ? await readUpcomingBookings(player.id) : [];
+  const [availability, bookings] = await Promise.all([
+    readAvailability(date, player?.id),
+    player ? readUpcomingBookings(player.id) : [],
+  ]);
 
   return (
     <main

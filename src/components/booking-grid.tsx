@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type {
+  AvailabilityDay,
   AvailabilityResponse,
   AvailabilitySlot,
   SlotStatus,
@@ -29,6 +30,17 @@ const VENUE_DATE_TIME = new Intl.DateTimeFormat("en-GB", {
   dateStyle: "medium",
   timeStyle: "short",
 });
+
+// Mirrors the server-side Booking Horizon for UX only.
+function dayNote(day: AvailabilityDay): string {
+  if (!day.memberOnly) {
+    return "Open to everyone.";
+  }
+  if (day.bookable) {
+    return `Member-only. Opens to everyone ${day.opensToEveryoneOn}.`;
+  }
+  return `Member-only. You can book it from ${day.opensToEveryoneOn}.`;
+}
 
 type BookingGridProps = {
   availability: AvailabilityResponse;
@@ -117,11 +129,7 @@ export function BookingGrid({
             key={day.date}
           >
             <strong>{day.date}</strong>
-            <span>
-              {day.memberOnly
-                ? `Member-only. Opens ${day.opensToEveryoneOn}.`
-                : "Open to everyone."}
-            </span>
+            <span>{dayNote(day)}</span>
           </a>
         ))}
       </nav>

@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { PoolClient, QueryResultRow } from "pg";
+import {
+  coversInstant,
+  readBookingHorizon,
+} from "@/lib/booking-horizon";
 import { clock } from "@/lib/clock";
 import { getPool } from "@/lib/db";
 
@@ -36,7 +40,12 @@ type PostgresError = Error & { code?: string };
 
 export class BookingError extends Error {
   constructor(
-    readonly code: "invalid_request" | "slot_in_past" | "slot_not_bookable" | "slot_taken",
+    readonly code:
+      | "invalid_request"
+      | "slot_in_past"
+      | "slot_not_bookable"
+      | "slot_taken"
+      | "outside_horizon",
     readonly status: number,
   ) {
     super(code);
@@ -121,12 +130,25 @@ async function readBookableCourt(
   return court;
 }
 
+// Whole-day horizon: every venue day the Booking touches must be inside the
+// Booker's horizon, so a Booking can never straddle the boundary.
+async function refuseOutsideHorizon(playerId: string, input: CreateBookingInput): Promise<void> {
+  const horizon = await readBookingHorizon(playerId);
+  for (let slotNumber = 0; slotNumber < input.durationHours; slotNumber += 1) {
+    const slotStart = new Date(input.startsAt.getTime() + slotNumber * 60 * 60 * 1000);
+    if (!coversInstant(horizon, slotStart)) {
+      throw new BookingError("outside_horizon", 400);
+    }
+  }
+}
+
 export async function createBooking(playerId: string, rawInput: unknown): Promise<Booking> {
   const input = parseInput(rawInput);
   const now = clock.now();
   if (input.startsAt.getTime() < now.getTime()) {
     throw new BookingError("slot_in_past", 400);
   }
+  await refuseOutsideHorizon(playerId, input);
 
   const client = await getPool().connect();
   try {

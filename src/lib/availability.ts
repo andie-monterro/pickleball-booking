@@ -1,8 +1,19 @@
-import { clock, formatVenueTime, VENUE_TIME_ZONE } from "@/lib/clock";
+import {
+  coversVenueDate,
+  readBookingHorizon,
+  type BookingHorizon,
+  type PlayerStanding,
+} from "@/lib/booking-horizon";
+import { clock, formatVenueTime } from "@/lib/clock";
 import { getPool } from "@/lib/db";
-
-const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-const HO_CHI_MINH_UTC_OFFSET_HOURS = 7;
+import {
+  addDays,
+  parseVenueDate,
+  venueDateFromInstant,
+  venueSlotStart,
+  weekdayForVenueDate,
+  type VenueDate,
+} from "@/lib/venue-date";
 
 type ClaimKind = "booking" | "block";
 export type SlotStatus = "free" | "taken" | "blocked" | "outside_horizon";
@@ -10,7 +21,10 @@ export type SlotLabel = "Free" | "Taken" | "Blocked" | "Past" | "Outside horizon
 
 export interface AvailabilityDay {
   date: string;
+  // A fact about the day: only Members can book it yet.
   memberOnly: boolean;
+  // Whether this viewer's own Booking Horizon reaches the day.
+  bookable: boolean;
   opensToEveryoneOn?: string;
 }
 
@@ -32,7 +46,7 @@ export interface AvailabilityResponse {
   date: string;
   timeZone: string;
   currentVenueTime: string;
-  viewer: "casual";
+  viewer: PlayerStanding;
   horizons: {
     casualDays: number;
     memberDays: number;
@@ -45,8 +59,6 @@ export interface AvailabilityResponse {
 
 interface VenueSettingsRow {
   venue_time_zone: string;
-  casual_horizon_days: number;
-  member_horizon_days: number;
 }
 
 interface OpeningHoursRow {
@@ -65,19 +77,19 @@ interface ClaimRow {
   source_kind: ClaimKind;
 }
 
-interface VenueDate {
-  key: string;
-  year: number;
-  month: number;
-  day: number;
-}
-
-export async function readAvailability(dateParam?: string): Promise<AvailabilityResponse> {
+// Pass the signed-in Player's id so the read mirrors their Booking Horizon;
+// without one the viewer is treated as a casual player.
+export async function readAvailability(
+  dateParam?: string,
+  playerId?: string,
+): Promise<AvailabilityResponse> {
   const pool = getPool();
-  const settings = await readVenueSettings();
+  const [settings, horizon] = await Promise.all([
+    readVenueSettings(),
+    readBookingHorizon(playerId),
+  ]);
   const now = clock.now();
-  const today = venueDateFromInstant(now);
-  const date = normalizeDateParam(dateParam, today);
+  const date = normalizeDateParam(dateParam, horizon.firstDate);
   const dayOfWeek = weekdayForVenueDate(date);
 
   const [courtsResult, openingHoursResult] = await Promise.all([
@@ -90,7 +102,7 @@ export async function readAvailability(dateParam?: string): Promise<Availability
 
   const courts = courtsResult.rows.map((court) => ({ id: court.id, name: court.name }));
   const hours = hoursFor(openingHoursResult.rows);
-  const slotStarts = hours.map((hour) => localSlotStart(date, hour));
+  const slotStarts = hours.map((hour) => venueSlotStart(date, hour));
   const claims = await readClaims(date, slotStarts);
   const claimByCourtAndStart = new Map<string, ClaimKind>();
 
@@ -98,11 +110,10 @@ export async function readAvailability(dateParam?: string): Promise<Availability
     claimByCourtAndStart.set(claimKey(claim.court_id, claim.slot_starts_at), claim.source_kind);
   }
 
-  const casualHorizonEnd = addDays(today, settings.casual_horizon_days - 1);
-  const insideCasualHorizon = date.key >= today.key && date.key <= casualHorizonEnd.key;
+  const insideHorizon = coversVenueDate(horizon, date);
   const slots = courts.flatMap((court) =>
     slotStarts.map((start, index) => {
-      const status = slotStatus(insideCasualHorizon, claimByCourtAndStart.get(claimKey(court.id, start)));
+      const status = slotStatus(insideHorizon, claimByCourtAndStart.get(claimKey(court.id, start)));
       return {
         courtId: court.id,
         courtName: court.name,
@@ -118,12 +129,12 @@ export async function readAvailability(dateParam?: string): Promise<Availability
     date: date.key,
     timeZone: settings.venue_time_zone,
     currentVenueTime: formatVenueTime(now),
-    viewer: "casual",
+    viewer: horizon.standing,
     horizons: {
-      casualDays: settings.casual_horizon_days,
-      memberDays: settings.member_horizon_days,
+      casualDays: horizon.casualDays,
+      memberDays: horizon.memberDays,
     },
-    days: dayStrip(today, settings.casual_horizon_days, settings.member_horizon_days),
+    days: dayStrip(horizon),
     courts,
     hours: hours.map(formatHour),
     slots,
@@ -132,7 +143,7 @@ export async function readAvailability(dateParam?: string): Promise<Availability
 
 async function readVenueSettings(): Promise<VenueSettingsRow> {
   const result = await getPool().query<VenueSettingsRow>(
-    "select venue_time_zone, casual_horizon_days, member_horizon_days from venue_settings where id = 1",
+    "select venue_time_zone from venue_settings where id = 1",
   );
   const settings = result.rows[0];
   if (!settings) {
@@ -146,8 +157,8 @@ async function readClaims(date: VenueDate, slotStarts: Date[]): Promise<ClaimRow
     return [];
   }
 
-  const dayStart = localSlotStart(date, 0);
-  const nextDayStart = localSlotStart(addDays(date, 1), 0);
+  const dayStart = venueSlotStart(date, 0);
+  const nextDayStart = venueSlotStart(addDays(date, 1), 0);
   const result = await getPool().query<ClaimRow>(
     `select court_id, slot_starts_at, source_kind
      from slot_claims
@@ -164,42 +175,21 @@ function normalizeDateParam(dateParam: string | undefined, fallback: VenueDate):
   return parseVenueDate(dateParam);
 }
 
-function venueDateFromInstant(date: Date): VenueDate {
-  const parts = new Intl.DateTimeFormat("en", {
-    timeZone: VENUE_TIME_ZONE,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(date);
-  const byType: Record<string, string> = {};
-  for (const part of parts) {
-    byType[part.type] = part.value;
-  }
-  return parseVenueDate(`${byType.year}-${byType.month}-${byType.day}`);
-}
-
-function parseVenueDate(value: string): VenueDate {
-  if (!DATE_PATTERN.test(value)) {
-    throw new RangeError("date must use YYYY-MM-DD");
-  }
-  const [year, month, day] = value.split("-").map(Number);
-  const key = new Date(Date.UTC(year, month - 1, day)).toISOString().slice(0, 10);
-  if (key !== value) {
-    throw new RangeError("date must be a real calendar date");
-  }
-  return { key, year, month, day };
-}
-
-function dayStrip(today: VenueDate, casualDays: number, memberDays: number): AvailabilityDay[] {
-  return Array.from({ length: memberDays }, (_, index) => {
-    const date = addDays(today, index);
-    if (index < casualDays) {
-      return { date: date.key, memberOnly: false };
+// The strip always spans the member horizon. A day past the casual horizon is
+// member-only, and carries the venue date at whose start it opens to casual
+// players; whether this viewer may book it depends on their own standing.
+function dayStrip(horizon: BookingHorizon): AvailabilityDay[] {
+  return Array.from({ length: horizon.memberDays }, (_, index) => {
+    const date = addDays(horizon.firstDate, index);
+    const bookable = index < horizon.days;
+    if (index < horizon.casualDays) {
+      return { date: date.key, memberOnly: false, bookable };
     }
     return {
       date: date.key,
       memberOnly: true,
-      opensToEveryoneOn: addDays(date, 1 - casualDays).key,
+      bookable,
+      opensToEveryoneOn: addDays(date, 1 - horizon.casualDays).key,
     };
   });
 }
@@ -214,8 +204,8 @@ function hoursFor(rows: OpeningHoursRow[]): number[] {
   return hours;
 }
 
-function slotStatus(insideCasualHorizon: boolean, claim: ClaimKind | undefined): SlotStatus {
-  if (!insideCasualHorizon) {
+function slotStatus(insideHorizon: boolean, claim: ClaimKind | undefined): SlotStatus {
+  if (!insideHorizon) {
     return "outside_horizon";
   }
   if (claim === "booking") {
@@ -246,16 +236,4 @@ function claimKey(courtId: number, start: Date): string {
 
 function formatHour(hour: number): string {
   return `${hour.toString().padStart(2, "0")}:00`;
-}
-
-function localSlotStart(date: VenueDate, hour: number): Date {
-  return new Date(Date.UTC(date.year, date.month - 1, date.day, hour - HO_CHI_MINH_UTC_OFFSET_HOURS));
-}
-
-function weekdayForVenueDate(date: VenueDate): number {
-  return new Date(Date.UTC(date.year, date.month - 1, date.day)).getUTCDay();
-}
-
-function addDays(date: VenueDate, days: number): VenueDate {
-  return parseVenueDate(new Date(Date.UTC(date.year, date.month - 1, date.day + days)).toISOString().slice(0, 10));
 }

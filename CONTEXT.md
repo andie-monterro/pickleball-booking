@@ -25,7 +25,7 @@ A person known to the system, identified by exactly one verified phone number. T
 _Avoid_: User, customer, account
 
 **Member**:
-A Player whose Staff-set membership end date ("member until") lies in the future; when it passes, the Player is a casual player again. The app only recognizes membership — selling and renewing it happens outside the app.
+A Player whose Staff-set membership end date ("member until") has not passed. The date is the last venue day of membership: the Player is a Member for the whole of that day, and a casual player from the next venue day. The app only recognizes membership — selling and renewing it happens outside the app.
 _Avoid_: Subscriber, VIP
 
 **Casual player**:

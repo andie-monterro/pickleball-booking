@@ -129,15 +129,23 @@ describe("GET /api/availability", () => {
 
     const body = await response.json();
     expect(body.days).toHaveLength(14);
-    expect(body.days.slice(0, 7).every((day: { memberOnly: boolean }) => !day.memberOnly)).toBe(true);
-    expect(body.days.slice(7).map((day: { date: string; memberOnly: boolean; opensToEveryoneOn: string }) => day)).toEqual([
-      { date: "2026-08-26", memberOnly: true, opensToEveryoneOn: "2026-08-20" },
-      { date: "2026-08-27", memberOnly: true, opensToEveryoneOn: "2026-08-21" },
-      { date: "2026-08-28", memberOnly: true, opensToEveryoneOn: "2026-08-22" },
-      { date: "2026-08-29", memberOnly: true, opensToEveryoneOn: "2026-08-23" },
-      { date: "2026-08-30", memberOnly: true, opensToEveryoneOn: "2026-08-24" },
-      { date: "2026-08-31", memberOnly: true, opensToEveryoneOn: "2026-08-25" },
-      { date: "2026-09-01", memberOnly: true, opensToEveryoneOn: "2026-08-26" },
+    expect(body.days.slice(0, 7)).toEqual([
+      { date: "2026-08-19", memberOnly: false, bookable: true },
+      { date: "2026-08-20", memberOnly: false, bookable: true },
+      { date: "2026-08-21", memberOnly: false, bookable: true },
+      { date: "2026-08-22", memberOnly: false, bookable: true },
+      { date: "2026-08-23", memberOnly: false, bookable: true },
+      { date: "2026-08-24", memberOnly: false, bookable: true },
+      { date: "2026-08-25", memberOnly: false, bookable: true },
+    ]);
+    expect(body.days.slice(7)).toEqual([
+      { date: "2026-08-26", memberOnly: true, bookable: false, opensToEveryoneOn: "2026-08-20" },
+      { date: "2026-08-27", memberOnly: true, bookable: false, opensToEveryoneOn: "2026-08-21" },
+      { date: "2026-08-28", memberOnly: true, bookable: false, opensToEveryoneOn: "2026-08-22" },
+      { date: "2026-08-29", memberOnly: true, bookable: false, opensToEveryoneOn: "2026-08-23" },
+      { date: "2026-08-30", memberOnly: true, bookable: false, opensToEveryoneOn: "2026-08-24" },
+      { date: "2026-08-31", memberOnly: true, bookable: false, opensToEveryoneOn: "2026-08-25" },
+      { date: "2026-09-01", memberOnly: true, bookable: false, opensToEveryoneOn: "2026-08-26" },
     ]);
   });
 
