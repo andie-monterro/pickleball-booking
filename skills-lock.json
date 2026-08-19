@@ -37,6 +37,30 @@
       "skillPath": "skills/engineering/domain-modeling/SKILL.md",
       "computedHash": "683744795bdc9fbfb6c0c2122c4b8119c950e2fe5bcbbf44237dd28aaea34b67"
     },
+    "dynamic-implement": {
+      "source": "phassle/skills",
+      "sourceType": "github",
+      "skillPath": "skills/other/dynamic-implement/SKILL.md",
+      "computedHash": "ce82b6dcb9bfa52c134feb07b01866d52a27dfbc951852598e8f3b5e0022f2d7"
+    },
+    "dynamic-run-dashboard": {
+      "source": "phassle/skills",
+      "sourceType": "github",
+      "skillPath": "skills/other/dynamic-run-dashboard/SKILL.md",
+      "computedHash": "e51537267e5afc606890bebf202f1afd899e7ea00632967746ab5532a1b963bd"
+    },
+    "dynamic-skills-calibrate": {
+      "source": "phassle/skills",
+      "sourceType": "github",
+      "skillPath": "skills/other/dynamic-skills-calibrate/SKILL.md",
+      "computedHash": "0e46c0e8e087fe3a520a4bffadb61eed341314e6d6c42f986e2de51830f0242f"
+    },
+    "dynamic-skills-setup": {
+      "source": "phassle/skills",
+      "sourceType": "github",
+      "skillPath": "skills/other/dynamic-skills-setup/SKILL.md",
+      "computedHash": "b4a53be713bfa9566bbd4ae5f9f6d7cbe5abcfd56256b4fb34eb16981737f3de"
+    },
     "git-guardrails-claude-code": {
       "source": "mattpocock/skills",
       "sourceType": "github",
@@ -162,6 +186,12 @@
       "sourceType": "github",
       "skillPath": "skills/engineering/to-tickets/SKILL.md",
       "computedHash": "6d018d31ba390aeaf14ae65e7b3bb5bd693b03d635762e535a71446715780743"
+    },
+    "tokenomics": {
+      "source": "phassle/skills",
+      "sourceType": "github",
+      "skillPath": "skills/productivity/tokenomics/SKILL.md",
+      "computedHash": "ad3ccce352311301db436df349269ef313e5a6683f3851f47fa75bcd9f3a6564"
     },
     "triage": {
       "source": "mattpocock/skills",
