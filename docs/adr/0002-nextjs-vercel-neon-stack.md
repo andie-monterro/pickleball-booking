@@ -13,5 +13,5 @@ Phone verification codes (required by [ADR-0001](0001-phone-number-as-player-ide
 ## Consequences
 
 - Expected running cost: ~$21–24/month once live (Vercel Pro $20 — the free Hobby tier disallows commercial use — plus a few dollars of SMS; Neon free tier). Free while still in development.
-- The Prelude API key is not stored in this repo. The app reads it from the `PRELUDE_API_KEY` environment variable; the maintainer holds the key.
+- The Prelude API key lives in the app's `.env` (gitignored) as `PRELUDE_API_KEY`.
 - Auth is hand-rolled OTP + sessions against the adapter (or a library with a custom SMS sender); turnkey phone-auth services (Firebase, Supabase Auth) were ruled out because none supports a cheap Vietnamese SMS route.
