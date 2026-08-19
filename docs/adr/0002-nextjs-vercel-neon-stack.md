@@ -2,7 +2,7 @@
 
 The app is built and maintained by one person driving AI coding agents, on a running budget under ~$25/month, with zero appetite for server maintenance. We chose a full-stack **Next.js (TypeScript)** app hosted on **Vercel** with **Postgres on Neon** (Singapore region, close to the players in Vietnam). TypeScript/Next.js is the ecosystem both the maintainer and AI agents handle best; Vercel is fully managed and Next.js-native; Postgres gives transactional guarantees (unique constraints) that make no-double-booking a database invariant rather than application logic.
 
-Phone verification codes (required by [ADR-0001](0001-phone-number-as-player-identity.md)) are sent via **Prelude's Verify API v2** (`api.prelude.dev`). SpeedSMS was the original choice but turned out unusable in practice (AND-19); Prelude is already used in production by the maintainer's other backend (`farm-management-saas-be` on the `sutagrow` server), so a working account and API key already exist. All OTP sending goes through a small provider adapter so switching providers (e.g. to Twilio) is an hour's work, not a rewrite.
+Phone verification codes (required by [ADR-0001](0001-phone-number-as-player-identity.md)) are sent via **Prelude's Verify API v2** (`api.prelude.dev`). SpeedSMS was the original choice but turned out unusable in practice (AND-19); the maintainer already has a working Prelude account and API key from another project. All OTP sending goes through a small provider adapter so switching providers (e.g. to Twilio) is an hour's work, not a rewrite.
 
 ## Considered Options
 
@@ -13,5 +13,5 @@ Phone verification codes (required by [ADR-0001](0001-phone-number-as-player-ide
 ## Consequences
 
 - Expected running cost: ~$21–24/month once live (Vercel Pro $20 — the free Hobby tier disallows commercial use — plus a few dollars of SMS; Neon free tier). Free while still in development.
-- The Prelude API key is not stored in this repo — it lives in the `.env` of `farm-management-saas-be` on the `sutagrow` server (`PRELUDE_API_KEY`). This app needs its own copy of that key in its Vercel environment variables.
+- The Prelude API key is not stored in this repo. The app reads it from the `PRELUDE_API_KEY` environment variable; the maintainer holds the key.
 - Auth is hand-rolled OTP + sessions against the adapter (or a library with a custom SMS sender); turnkey phone-auth services (Firebase, Supabase Auth) were ruled out because none supports a cheap Vietnamese SMS route.
