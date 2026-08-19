@@ -235,7 +235,7 @@ function slotLabel(status: SlotStatus, start: Date, now: Date): SlotLabel {
     return "Blocked";
   }
   if (status === "free") {
-    return start <= now ? "Past" : "Free";
+    return start < now ? "Past" : "Free";
   }
   return "Outside horizon";
 }
