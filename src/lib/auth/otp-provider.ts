@@ -1,4 +1,4 @@
-import { randomInt } from "node:crypto";
+import { createHmac } from "node:crypto";
 
 export interface OtpProvider {
   sendCode(phone: string): Promise<void>;
@@ -6,6 +6,7 @@ export interface OtpProvider {
 }
 
 const PRELUDE_API_URL = "https://api.prelude.dev/v2/verification";
+const OTP_WINDOW_MS = 10 * 60 * 1000;
 
 class PreludeOtpProvider implements OtpProvider {
   private apiKey(): string {
@@ -67,20 +68,27 @@ class PreludeOtpProvider implements OtpProvider {
 }
 
 class ConsoleOtpProvider implements OtpProvider {
-  private readonly codes = new Map<string, string>();
+  constructor(private readonly secret: string) {}
+
+  private codeAt(phone: string, timestamp: number): string {
+    const window = Math.floor(timestamp / OTP_WINDOW_MS);
+    const digest = createHmac("sha256", this.secret)
+      .update(`${phone}:${window}`)
+      .digest();
+    return String(digest.readUInt32BE(0) % 1000000).padStart(6, "0");
+  }
 
   async sendCode(phone: string): Promise<void> {
-    const code = String(randomInt(100000, 1000000));
-    this.codes.set(phone, code);
-    console.info(`[local OTP] ${phone}: ${code}`);
+    const code = this.codeAt(phone, Date.now());
+    console.info(`[console OTP] ***${phone.slice(-4)}: ${code}`);
   }
 
   async checkCode(phone: string, code: string): Promise<boolean> {
-    if (this.codes.get(phone) !== code) {
-      return false;
-    }
-    this.codes.delete(phone);
-    return true;
+    const now = Date.now();
+    return (
+      code === this.codeAt(phone, now) ||
+      code === this.codeAt(phone, now - OTP_WINDOW_MS)
+    );
   }
 }
 
@@ -89,8 +97,12 @@ function createOtpProvider(): OtpProvider {
   if (providerName === "prelude") {
     return new PreludeOtpProvider();
   }
-  if (providerName === "console" && process.env.NODE_ENV !== "production") {
-    return new ConsoleOtpProvider();
+  if (providerName === "console") {
+    const secret = process.env.OTP_CONSOLE_SECRET;
+    if (!secret) {
+      throw new Error("OTP_CONSOLE_SECRET is not set");
+    }
+    return new ConsoleOtpProvider(secret);
   }
   throw new Error(`OTP provider ${providerName} is not available`);
 }

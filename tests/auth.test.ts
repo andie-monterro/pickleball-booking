@@ -224,8 +224,10 @@ describe("phone OTP authentication", () => {
     expect(await invalidResponse.json()).toEqual({ error: "unauthorized" });
   });
 
-  it("supports manual signup with an OTP printed by the console provider", async () => {
+  it("supports production signup with a serverless-safe console OTP", async () => {
     vi.stubEnv("OTP_PROVIDER", "console");
+    vi.stubEnv("OTP_CONSOLE_SECRET", "test-console-otp-secret");
+    vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("PRELUDE_API_KEY", "");
     resetOtpProvider();
     const consoleOutput = vi.spyOn(console, "info").mockImplementation(() => {});
@@ -240,6 +242,7 @@ describe("phone OTP authentication", () => {
     const code = logLine.match(/\b\d{6}\b/)?.[0];
     expect(code).toBeDefined();
     const { challengeId } = await startResponse.json();
+    resetOtpProvider();
 
     const verifyResponse = await httpPost(verifyRoute, "/api/auth/verify", {
       challengeId,
@@ -248,20 +251,4 @@ describe("phone OTP authentication", () => {
     expect(verifyResponse.status).toBe(200);
   });
 
-  it("refuses to enable console OTP in production", async () => {
-    vi.stubEnv("OTP_PROVIDER", "console");
-    vi.stubEnv("NODE_ENV", "production");
-    vi.stubEnv("PRELUDE_API_KEY", "");
-    resetOtpProvider();
-    const consoleOutput = vi.spyOn(console, "info").mockImplementation(() => {});
-
-    const response = await httpPost(signUpRoute, "/api/auth/signup/request-code", {
-      displayName: "Lan Nguyen",
-      phone: NEW_PHONE,
-    });
-
-    expect(response.status).toBe(503);
-    expect(await response.json()).toEqual({ error: "otp_unavailable" });
-    expect(consoleOutput).not.toHaveBeenCalled();
-  });
 });
