@@ -93,18 +93,14 @@ class ConsoleOtpProvider implements OtpProvider {
 }
 
 function createOtpProvider(): OtpProvider {
-  const providerName = process.env.OTP_PROVIDER ?? "prelude";
-  if (providerName === "prelude") {
+  if (process.env.OTP_DEBUG !== "yes") {
     return new PreludeOtpProvider();
   }
-  if (providerName === "console") {
-    const secret = process.env.OTP_CONSOLE_SECRET;
-    if (!secret) {
-      throw new Error("OTP_CONSOLE_SECRET is not set");
-    }
-    return new ConsoleOtpProvider(secret);
+  const secret = process.env.OTP_CONSOLE_SECRET;
+  if (!secret) {
+    throw new Error("OTP_CONSOLE_SECRET is not set");
   }
-  throw new Error(`OTP provider ${providerName} is not available`);
+  return new ConsoleOtpProvider(secret);
 }
 
 let currentProvider: OtpProvider | undefined;

@@ -225,7 +225,7 @@ describe("phone OTP authentication", () => {
   });
 
   it("supports production signup with a serverless-safe console OTP", async () => {
-    vi.stubEnv("OTP_PROVIDER", "console");
+    vi.stubEnv("OTP_DEBUG", "yes");
     vi.stubEnv("OTP_CONSOLE_SECRET", "test-console-otp-secret");
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("PRELUDE_API_KEY", "");
