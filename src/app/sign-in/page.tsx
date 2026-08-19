@@ -8,9 +8,16 @@ type SignInPageProps = {
 export default async function SignInPage({ searchParams }: SignInPageProps) {
   const params = await searchParams;
   const requestedReturnTo = typeof params?.returnTo === "string" ? params.returnTo : "/";
-  const returnTo = requestedReturnTo.startsWith("/") && !requestedReturnTo.startsWith("//")
-    ? requestedReturnTo
-    : "/";
+  const appOrigin = "http://app.local";
+  let returnTo = "/";
+  try {
+    const candidate = new URL(requestedReturnTo, appOrigin);
+    if (candidate.origin === appOrigin) {
+      returnTo = `${candidate.pathname}${candidate.search}${candidate.hash}`;
+    }
+  } catch {
+    returnTo = "/";
+  }
 
   return (
     <main className={styles.main}>
