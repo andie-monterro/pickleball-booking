@@ -15,6 +15,7 @@ export type Player = {
   id: string;
   displayName: string;
   phone: string;
+  strikeCount: number;
 };
 
 type Challenge = {
@@ -41,6 +42,7 @@ interface PlayerRow extends QueryResultRow {
   id: string;
   display_name: string;
   phone: string;
+  strike_count: number;
 }
 
 interface ExistingPlayerRow extends PlayerRow {
@@ -90,6 +92,7 @@ function playerFromRow(row: PlayerRow): Player {
     id: row.id,
     displayName: row.display_name,
     phone: row.phone,
+    strikeCount: row.strike_count,
   };
 }
 
@@ -173,7 +176,7 @@ async function createOrTakeOverPlayer(
     `insert into players (id, display_name, phone, created_at)
      values ($1, $2, $3, $4)
      on conflict (phone) do nothing
-     returning id, display_name, phone`,
+     returning id, display_name, phone, 0::integer as strike_count`,
     [randomUUID(), challenge.display_name, challenge.phone, now],
   );
 
@@ -181,6 +184,7 @@ async function createOrTakeOverPlayer(
   if (!player) {
     const existing = await client.query<ExistingPlayerRow>(
       `select players.id, players.display_name, players.phone,
+              current_strike_count(players.id, $2) as strike_count,
               exists (
                 select 1 from player_signups
                  where player_signups.player_id = players.id
@@ -188,7 +192,7 @@ async function createOrTakeOverPlayer(
          from players
         where players.phone = $1
         for update`,
-      [challenge.phone],
+      [challenge.phone, now],
     );
     const row = existing.rows[0];
     if (!row) {
@@ -205,6 +209,7 @@ async function createOrTakeOverPlayer(
       id: row.id,
       displayName: challenge.display_name,
       phone: row.phone,
+      strikeCount: row.strike_count,
     };
   }
 
@@ -218,14 +223,16 @@ async function createOrTakeOverPlayer(
 async function findReturningPlayer(
   client: PoolClient,
   phone: string,
+  at: Date,
 ): Promise<Player> {
   const result = await client.query<PlayerRow>(
-    `select players.id, players.display_name, players.phone
+    `select players.id, players.display_name, players.phone,
+            current_strike_count(players.id, $2) as strike_count
        from players
        join player_signups on player_signups.player_id = players.id
       where players.phone = $1
       for update of players`,
-    [phone],
+    [phone, at],
   );
   if (result.rowCount === 0) {
     throw new AuthError("player_not_found", 404);
@@ -273,7 +280,7 @@ export async function verifyOtp(input: unknown): Promise<VerifiedSession> {
     const player =
       locked.flow === "signup"
         ? await createOrTakeOverPlayer(client, locked, verifiedAt)
-        : await findReturningPlayer(client, locked.phone);
+        : await findReturningPlayer(client, locked.phone, verifiedAt);
     const sessionToken = randomBytes(32).toString("base64url");
     const tokenHash = createHash("sha256").update(sessionToken).digest("hex");
     const sessionExpiresAt = new Date(verifiedAt.getTime() + SESSION_LIFETIME_MS);
@@ -311,13 +318,15 @@ export async function readPlayerSessionToken(sessionToken: string | undefined): 
     return null;
   }
   const tokenHash = createHash("sha256").update(sessionToken).digest("hex");
+  const now = clock.now();
   const result = await getPool().query<PlayerRow>(
-    `select players.id, players.display_name, players.phone
+    `select players.id, players.display_name, players.phone,
+            current_strike_count(players.id, $3) as strike_count
        from player_sessions
        join players on players.id = player_sessions.player_id
       where player_sessions.token_hash = $1
         and player_sessions.expires_at > $2`,
-    [tokenHash, clock.now()],
+    [tokenHash, now, now],
   );
   return result.rows[0] ? playerFromRow(result.rows[0]) : null;
 }

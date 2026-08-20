@@ -157,6 +157,11 @@
   font-weight: 600;
 }
 
+.warning {
+  color: #b42318;
+  font-weight: 700;
+}
+
 .confirmActions {
   display: flex;
   gap: 0.75rem;
@@ -211,6 +216,28 @@
   display: flex;
   justify-content: space-between;
   padding: 0.875rem 1rem;
+}
+
+.bookingDetails {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.cancelButton {
+  background: #fff;
+  border: 1px solid #d92d20;
+  border-radius: 0.5rem;
+  color: #b42318;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  padding: 0.65rem 0.85rem;
+  white-space: nowrap;
+}
+
+.cancelButton:hover,
+.cancelButton:focus-visible {
+  background: #fef3f2;
 }
 
 @media (max-width: 40rem) {

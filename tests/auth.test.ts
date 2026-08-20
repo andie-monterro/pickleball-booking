@@ -120,6 +120,7 @@ describe("phone OTP authentication", () => {
         id: "desk-player-42",
         displayName: "Lan Nguyen",
         phone: NEW_PHONE,
+        strikeCount: 0,
       },
     });
   });

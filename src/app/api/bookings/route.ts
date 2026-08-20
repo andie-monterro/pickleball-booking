@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { readPlayerSession } from "@/lib/auth/auth";
 import {
   BookingError,
+  cancelBooking,
   createBooking,
   readUpcomingBookings,
 } from "@/lib/bookings";
@@ -10,7 +11,12 @@ export const dynamic = "force-dynamic";
 
 function bookingErrorResponse(error: unknown): Response {
   if (error instanceof BookingError) {
-    return NextResponse.json({ error: error.code }, { status: error.status });
+    return NextResponse.json(
+      error.code === "cancellation_reclassified"
+        ? { error: error.code, cancellationKind: "late_cancel" }
+        : { error: error.code },
+      { status: error.status },
+    );
   }
   if (error instanceof SyntaxError) {
     return NextResponse.json({ error: "invalid_request" }, { status: 400 });
@@ -34,6 +40,20 @@ export async function POST(request: Request): Promise<Response> {
     }
     const booking = await createBooking(player.id, await request.json());
     return NextResponse.json({ booking }, { status: 201 });
+  } catch (error) {
+    return bookingErrorResponse(error);
+  }
+}
+
+export async function DELETE(request: Request): Promise<Response> {
+  try {
+    const player = await readPlayerSession(request);
+    if (!player) {
+      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    }
+    return NextResponse.json(
+      await cancelBooking(player.id, await request.json()),
+    );
   } catch (error) {
     return bookingErrorResponse(error);
   }

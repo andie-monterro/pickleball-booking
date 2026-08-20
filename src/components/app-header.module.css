@@ -43,8 +43,14 @@
   max-width: 100%;
 }
 
-.strikeSlot:empty {
-  display: none;
+.strikeCount {
+  background: #fff4ed;
+  border: 1px solid #ffd6ae;
+  border-radius: 999px;
+  color: #b93815;
+  font-weight: 700;
+  padding: 0.5rem 0.75rem;
+  white-space: nowrap;
 }
 
 .signIn,

@@ -18,8 +18,19 @@ export async function AppHeader() {
           </p>
         </a>
         <div className={styles.playerArea}>
-          <span className={styles.strikeSlot} data-slot="strike-count" />
-          {player ? <strong className={styles.playerName}>{player.displayName}</strong> : <SignInLink />}
+          {player ? (
+            <>
+              <span
+                aria-label={`${player.strikeCount} current Strikes`}
+                className={styles.strikeCount}
+              >
+                {player.strikeCount} {player.strikeCount === 1 ? "Strike" : "Strikes"}
+              </span>
+              <strong className={styles.playerName}>{player.displayName}</strong>
+            </>
+          ) : (
+            <SignInLink />
+          )}
         </div>
       </div>
     </header>

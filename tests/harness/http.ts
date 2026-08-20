@@ -16,18 +16,37 @@ export function httpGet(
   );
 }
 
+function httpJson(
+  handler: RouteHandler,
+  method: "POST" | "DELETE",
+  path: string,
+  body: unknown,
+  headers?: HeadersInit,
+): Promise<Response> {
+  const requestHeaders = new Headers(headers);
+  requestHeaders.set("content-type", "application/json");
+  const request = new Request(new URL(path, BASE_URL), {
+    method,
+    headers: requestHeaders,
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  return Promise.resolve(handler(request));
+}
+
 export function httpPost(
   route: { POST: RouteHandler },
   path: string,
   body?: unknown,
   headers?: HeadersInit,
 ): Promise<Response> {
-  const requestHeaders = new Headers(headers);
-  requestHeaders.set("content-type", "application/json");
-  const request = new Request(new URL(path, BASE_URL), {
-    method: "POST",
-    headers: requestHeaders,
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  return Promise.resolve(route.POST(request));
+  return httpJson(route.POST, "POST", path, body, headers);
+}
+
+export function httpDelete(
+  route: { DELETE: RouteHandler },
+  path: string,
+  body?: unknown,
+  headers?: HeadersInit,
+): Promise<Response> {
+  return httpJson(route.DELETE, "DELETE", path, body, headers);
 }
