@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as meRoute from "@/app/api/auth/me/route";
+import * as signInRoute from "@/app/api/auth/sign-in/request-code/route";
 import * as signUpRoute from "@/app/api/auth/signup/request-code/route";
 import * as verifyRoute from "@/app/api/auth/verify/route";
 import * as availabilityRoute from "@/app/api/availability/route";
@@ -159,6 +160,29 @@ describe("staff desk HTTP API", () => {
     const anonymousRead = await httpGet(auditLogRoute, "/api/staff/audit-log");
     expect(anonymousRead.status).toBe(401);
     expect(await anonymousRead.json()).toEqual({ error: "unauthorized" });
+  });
+
+  it("signs a Staff account in with a one-time code and opens the staff endpoints", async () => {
+    const codeRequest = await httpPost(
+      signInRoute,
+      "/api/auth/sign-in/request-code",
+      { phone: STAFF.phone },
+    );
+    expect(codeRequest.status).toBe(202);
+    const { challengeId } = await codeRequest.json();
+
+    const verify = await httpPost(verifyRoute, "/api/auth/verify", {
+      challengeId,
+      code: otp.latestCode(STAFF.phone),
+    });
+    expect(verify.status).toBe(200);
+    expect(await verify.json()).toMatchObject({
+      player: { id: STAFF.playerId, role: "staff" },
+    });
+
+    const session = { cookie: verify.headers.get("set-cookie")?.split(";", 1)[0] ?? "" };
+    const log = await httpGet(auditLogRoute, "/api/staff/audit-log", session);
+    expect(log.status).toBe(200);
   });
 
   it("refuses a desk Booking outside the named Player's own horizon", async () => {
