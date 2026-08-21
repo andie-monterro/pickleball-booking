@@ -268,6 +268,32 @@ describe("Booking Ban", () => {
     });
   });
 
+  it("lifts the ban when one of the three Strikes is waived", async () => {
+    await earnStrike(DAY_88);
+    await earnStrike(DAY_89);
+    const thirdEarnedAt = await earnStrike(DAY_90);
+
+    const banned = await attemptBooking(DAY_90);
+    expect(banned.status).toBe(403);
+
+    // Staff waiving a Strike is a later slice, so this reaches for the record
+    // the waiver will write. Ban state is derived, so removing the third Strike
+    // from the count is all it takes.
+    await getPool().query(
+      "update strikes set waived_at = $1 where earned_at = $2",
+      [thirdEarnedAt, thirdEarnedAt],
+    );
+
+    const attempt = await attemptBooking(DAY_90);
+
+    expect(attempt.status).toBe(201);
+
+    const profile = await httpGet(meRoute, "/api/auth/me", COOKIE);
+    expect(await profile.json()).toMatchObject({
+      player: { strikeCount: 2, bookingBanEndsAt: null },
+    });
+  });
+
   it("still lets Staff book for a banned Player at the desk", async () => {
     await earnStrike(DAY_88);
     await earnStrike(DAY_89);
