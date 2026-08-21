@@ -7,6 +7,7 @@ import * as availabilityRoute from "@/app/api/availability/route";
 import * as bookingsRoute from "@/app/api/bookings/route";
 import * as auditLogRoute from "@/app/api/staff/audit-log/route";
 import * as staffBookingsRoute from "@/app/api/staff/bookings/route";
+import * as staffPlayersRoute from "@/app/api/staff/players/route";
 import * as staffScheduleRoute from "@/app/api/staff/schedule/route";
 import { resetOtpProvider, setOtpProvider } from "@/lib/auth/otp-provider";
 import { fixedClock, resetClock, setClock } from "@/lib/clock";
@@ -596,6 +597,50 @@ describe("staff desk HTTP API", () => {
     expect(
       body.slots.every((slot: { status: string }) => slot.status === "free"),
     ).toBe(true);
+  });
+
+  it("lets Staff look up an existing Player to book for", async () => {
+    await getPool().query("update players set member_until = $1 where id = $2", [
+      "2026-09-30",
+      PLAYER.playerId,
+    ]);
+
+    const all = await httpGet(staffPlayersRoute, "/api/staff/players", cookieFor(STAFF));
+    expect(all.status).toBe(200);
+    expect((await all.json()).players).toEqual([
+      { id: STAFF.playerId, displayName: STAFF.displayName, phone: STAFF.phone, memberUntil: null },
+      {
+        id: PLAYER.playerId,
+        displayName: PLAYER.displayName,
+        phone: PLAYER.phone,
+        memberUntil: "2026-09-30",
+      },
+    ]);
+
+    const byName = await httpGet(
+      staffPlayersRoute,
+      "/api/staff/players?search=lan",
+      cookieFor(STAFF),
+    );
+    expect((await byName.json()).players).toEqual([
+      expect.objectContaining({ id: PLAYER.playerId }),
+    ]);
+
+    const byPhone = await httpGet(
+      staffPlayersRoute,
+      `/api/staff/players?search=${encodeURIComponent(STAFF.phone.slice(-6))}`,
+      cookieFor(STAFF),
+    );
+    expect((await byPhone.json()).players).toEqual([
+      expect.objectContaining({ id: STAFF.playerId }),
+    ]);
+
+    const fromPlayer = await httpGet(
+      staffPlayersRoute,
+      "/api/staff/players",
+      cookieFor(PLAYER),
+    );
+    expect(fromPlayer.status).toBe(403);
   });
 
   it("refuses a desk Booking without a named Player, and one from a player session", async () => {
