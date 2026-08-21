@@ -106,13 +106,38 @@ describe("app shell", () => {
         [accounts[0].id, now],
       );
 
+      const staffCookie = `pb_session=${accounts[0].token}`;
       const deskResponse = await fetch(`${baseUrl}/staff`, {
-        headers: { cookie: `pb_session=${accounts[0].token}` },
+        headers: { cookie: staffCookie },
       });
       const desk = await deskResponse.text();
       expect(deskResponse.status).toBe(200);
       expect(desk).toContain('aria-label="Staff schedule for');
       expect(desk).toContain("Audit Log");
+
+      // A Block reaches the desk as something Staff can remove. This test runs
+      // on the real clock, so it picks 09:00 venue time on the current venue
+      // day, which is inside Opening Hours.
+      const venueDate = new Date(now.getTime() + 7 * 60 * 60 * 1000)
+        .toISOString()
+        .slice(0, 10);
+      const placed = await fetch(`${baseUrl}/api/staff/blocks`, {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: staffCookie },
+        body: JSON.stringify({
+          courtId: 4,
+          startsAt: `${venueDate}T02:00:00.000Z`,
+          slotCount: 2,
+        }),
+      });
+      expect(placed.status).toBe(201);
+
+      const blockedDesk = await fetch(`${baseUrl}/staff?date=${venueDate}`, {
+        headers: { cookie: staffCookie },
+      });
+      expect(await blockedDesk.text()).toContain(
+        'aria-label="Remove the Block on Court 4 at 09:00"',
+      );
 
       const playerResponse = await fetch(`${baseUrl}/staff`, {
         headers: { cookie: `pb_session=${accounts[1].token}` },
@@ -121,6 +146,8 @@ describe("app shell", () => {
       expect(playerPage).toContain("This page is for Staff.");
       expect(playerPage).not.toContain('aria-label="Staff schedule for');
     } finally {
+      await pool.query("delete from slot_claims where source_kind = 'block'");
+      await pool.query("delete from blocks");
       await pool.query("delete from player_sessions where player_id = any($1)", [
         accounts.map((account) => account.id),
       ]);
