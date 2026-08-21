@@ -35,6 +35,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
       <BookingGrid
         availability={availability}
         bookings={bookings}
+        bookingBanEndsAt={player?.bookingBanEndsAt ?? null}
         signedIn={Boolean(player)}
       />
     </main>

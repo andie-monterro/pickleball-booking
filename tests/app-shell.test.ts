@@ -160,6 +160,73 @@ describe("app shell", () => {
     }
   });
 
+  it("shows a banned Player the ban end date instead of bookable Slots", async () => {
+    const pool = getPool();
+    const account = {
+      id: "shell-banned",
+      name: "Bao Pham",
+      phone: "+84903000003",
+      token: "shell-banned-session",
+    };
+    // Real time, not the injectable clock: this page is rendered by a separate
+    // `next dev` process, which has its own clock.
+    const now = new Date();
+    const banEndsAt = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+    try {
+      await pool.query(
+        `insert into players (id, display_name, phone, created_at)
+         values ($1, $2, $3, $4)`,
+        [account.id, account.name, account.phone, now],
+      );
+      await pool.query(
+        `insert into player_sessions (token_hash, player_id, expires_at, created_at)
+         values ($1, $2, $3, $4)`,
+        [
+          createHash("sha256").update(account.token).digest("hex"),
+          account.id,
+          new Date(now.getTime() + 60 * 60 * 1000),
+          now,
+        ],
+      );
+      // Three Strikes earned now, each on its own cancelled Booking, which is
+      // the shape a Late Cancel leaves behind.
+      for (const suffix of [1, 2, 3]) {
+        const bookingId = `shell-banned-booking-${suffix}`;
+        await pool.query(
+          `insert into bookings
+             (id, booker_id, court_id, starts_at, duration_hours, created_at,
+              cancelled_at, cancellation_kind)
+           values ($1, $2, 1, date_trunc('hour', $3::timestamptz - interval '1 day'),
+                   1, $3, $3, 'late_cancel')`,
+          [bookingId, account.id, now],
+        );
+        await pool.query(
+          `insert into strikes (id, player_id, booking_id, reason, earned_at)
+           values ($1, $2, $3, 'late_cancel', $4)`,
+          [`shell-banned-strike-${suffix}`, account.id, bookingId, now],
+        );
+      }
+
+      const response = await fetch(baseUrl, {
+        headers: { cookie: `pb_session=${account.token}` },
+      });
+      const page = await response.text();
+
+      expect(response.status).toBe(200);
+      expect(page).toContain("Booking Ban");
+      expect(page).toContain(banEndsAt.toISOString());
+      // The grid still shows availability, but no Slot is bookable while the
+      // ban stands.
+      expect(page).toContain('aria-label="Availability for');
+      expect(page).not.toContain('aria-label="Book ');
+    } finally {
+      await pool.query("delete from strikes where player_id = $1", [account.id]);
+      await pool.query("delete from bookings where booker_id = $1", [account.id]);
+      await pool.query("delete from player_sessions where player_id = $1", [account.id]);
+      await pool.query("delete from players where id = $1", [account.id]);
+    }
+  });
+
   it("keeps the staff desk behind a Staff session", async () => {
     const response = await fetch(`${baseUrl}/staff`);
     const page = await response.text();
