@@ -39,6 +39,11 @@ const NEXT_SLOT = "2026-08-21T08:00:00.000Z";
 
 const WALK_IN = { displayName: "Bao Pham", phone: "+84902000003" };
 
+// 14:00 venue time on the first day past each horizon: 2026-08-28 is day 8 (past
+// a casual player's 7 days), 2026-09-04 is day 15 (past a Member's 14 days).
+const OUTSIDE_CASUAL_HORIZON = "2026-08-28T07:00:00.000Z";
+const OUTSIDE_MEMBER_HORIZON = "2026-09-04T07:00:00.000Z";
+
 type Account = typeof STAFF;
 
 function deskBooking(fields: Record<string, unknown>): Record<string, unknown> {
@@ -154,6 +159,53 @@ describe("staff desk HTTP API", () => {
     expect(await anonymousRead.json()).toEqual({ error: "unauthorized" });
   });
 
+  it("refuses a desk Booking outside the named Player's own horizon", async () => {
+    const casualRefused = await httpPost(
+      staffBookingsRoute,
+      "/api/staff/bookings",
+      deskBooking({
+        playerId: PLAYER.playerId,
+        startsAt: OUTSIDE_CASUAL_HORIZON,
+      }),
+      cookieFor(STAFF),
+    );
+    expect(casualRefused.status).toBe(400);
+    expect(await casualRefused.json()).toEqual({ error: "outside_horizon" });
+
+    // A refused attempt is no action, so it leaves no Audit Log entry.
+    const log = await httpGet(auditLogRoute, "/api/staff/audit-log", cookieFor(STAFF));
+    expect(await log.json()).toEqual({ entries: [] });
+
+    // The same day is inside a Member's horizon. Staff standing never matters:
+    // the named Booker's standing decides.
+    await getPool().query("update players set member_until = $1 where id = $2", [
+      "2026-08-21",
+      PLAYER.playerId,
+    ]);
+    const memberAllowed = await httpPost(
+      staffBookingsRoute,
+      "/api/staff/bookings",
+      deskBooking({
+        playerId: PLAYER.playerId,
+        startsAt: OUTSIDE_CASUAL_HORIZON,
+      }),
+      cookieFor(STAFF),
+    );
+    expect(memberAllowed.status).toBe(201);
+
+    const memberRefused = await httpPost(
+      staffBookingsRoute,
+      "/api/staff/bookings",
+      deskBooking({
+        playerId: PLAYER.playerId,
+        startsAt: OUTSIDE_MEMBER_HORIZON,
+      }),
+      cookieFor(STAFF),
+    );
+    expect(memberRefused.status).toBe(400);
+    expect(await memberRefused.json()).toEqual({ error: "outside_horizon" });
+  });
+
   it("creates a Booking naming an existing Player, held by that Player", async () => {
     const response = await httpPost(
       staffBookingsRoute,
@@ -246,6 +298,134 @@ describe("staff desk HTTP API", () => {
     expect(await response.json()).toMatchObject({
       booker: { id: PLAYER.playerId, displayName: PLAYER.displayName },
     });
+  });
+
+  it("cancels any Booking penalty-free, past the cutoff and after the start", async () => {
+    const booked = await httpPost(
+      bookingsRoute,
+      "/api/bookings",
+      { courtId: 1, startsAt: SLOT, durationHours: 1 },
+      cookieFor(PLAYER),
+    );
+    const { booking } = await booked.json();
+
+    // Past the 15-minute creation grace and inside the 6-hour cutoff, so the
+    // Booker's own cancellation here would be a Late Cancel.
+    setClock(fixedClock(new Date("2026-08-21T05:20:00.000Z")));
+    const cancelled = await httpDelete(
+      staffBookingsRoute,
+      "/api/staff/bookings",
+      { bookingId: booking.id },
+      cookieFor(STAFF),
+    );
+
+    expect(cancelled.status).toBe(200);
+    expect(await cancelled.json()).toMatchObject({
+      cancellation: { bookingId: booking.id, kind: "penalty_free" },
+    });
+
+    // No Strike for the Booker, and the Slot reopens.
+    const profile = await httpGet(meRoute, "/api/auth/me", cookieFor(PLAYER));
+    expect(await profile.json()).toMatchObject({ player: { strikeCount: 0 } });
+    const upcoming = await httpGet(bookingsRoute, "/api/bookings", cookieFor(PLAYER));
+    expect(await upcoming.json()).toEqual({ bookings: [] });
+    const availability = await httpGet(
+      availabilityRoute,
+      "/api/availability?date=2026-08-21",
+    );
+    const body = await availability.json();
+    expect(
+      body.slots.find(
+        (slot: { courtId: number; start: string }) =>
+          slot.courtId === 1 && slot.start === SLOT,
+      ),
+    ).toMatchObject({ status: "free" });
+
+    // Cancelling the same Booking twice finds nothing left to cancel.
+    const again = await httpDelete(
+      staffBookingsRoute,
+      "/api/staff/bookings",
+      { bookingId: booking.id },
+      cookieFor(STAFF),
+    );
+    expect(again.status).toBe(404);
+    expect(await again.json()).toEqual({ error: "booking_not_found" });
+  });
+
+  it("cancels a Booking that has already started, freeing both its Slots", async () => {
+    const booked = await httpPost(
+      staffBookingsRoute,
+      "/api/staff/bookings",
+      deskBooking({ playerId: PLAYER.playerId, durationHours: 2 }),
+      cookieFor(STAFF),
+    );
+    const { booking } = await booked.json();
+
+    setClock(fixedClock(new Date("2026-08-21T07:30:00.000Z")));
+    const playerAttempt = await httpDelete(
+      bookingsRoute,
+      "/api/bookings",
+      { bookingId: booking.id },
+      cookieFor(PLAYER),
+    );
+    expect(playerAttempt.status).toBe(409);
+    expect(await playerAttempt.json()).toEqual({ error: "booking_started" });
+
+    const staffCancel = await httpDelete(
+      staffBookingsRoute,
+      "/api/staff/bookings",
+      { bookingId: booking.id },
+      cookieFor(STAFF),
+    );
+    expect(staffCancel.status).toBe(200);
+    expect(await staffCancel.json()).toMatchObject({
+      cancellation: { kind: "penalty_free" },
+    });
+
+    const availability = await httpGet(
+      availabilityRoute,
+      "/api/availability?date=2026-08-21",
+    );
+    const body = await availability.json();
+    expect(
+      body.slots.filter(
+        (slot: { courtId: number; start: string; status: string }) =>
+          slot.courtId === 1 &&
+          [SLOT, NEXT_SLOT].includes(slot.start) &&
+          slot.status === "free",
+      ),
+    ).toHaveLength(2);
+  });
+
+  it("refuses a staff cancellation from a player session and for an unknown Booking", async () => {
+    const booked = await httpPost(
+      bookingsRoute,
+      "/api/bookings",
+      { courtId: 1, startsAt: SLOT, durationHours: 1 },
+      cookieFor(PLAYER),
+    );
+    const { booking } = await booked.json();
+
+    const fromPlayer = await httpDelete(
+      staffBookingsRoute,
+      "/api/staff/bookings",
+      { bookingId: booking.id },
+      cookieFor(PLAYER),
+    );
+    expect(fromPlayer.status).toBe(403);
+    expect(await fromPlayer.json()).toEqual({ error: "staff_only" });
+
+    const unknown = await httpDelete(
+      staffBookingsRoute,
+      "/api/staff/bookings",
+      { bookingId: "no-such-booking" },
+      cookieFor(STAFF),
+    );
+    expect(unknown.status).toBe(404);
+    expect(await unknown.json()).toEqual({ error: "booking_not_found" });
+
+    const upcoming = await httpGet(bookingsRoute, "/api/bookings", cookieFor(PLAYER));
+    expect(await upcoming.json()).toMatchObject({ bookings: [{ id: booking.id }] });
   });
 
   it("refuses a desk Booking without a named Player, and one from a player session", async () => {

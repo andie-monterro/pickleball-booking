@@ -425,6 +425,88 @@ export async function createBookingForPlayer(
   }
 }
 
+async function releaseBooking(
+  client: PoolClient,
+  bookingId: string,
+  kind: CancellationKind,
+  now: Date,
+): Promise<void> {
+  await client.query(
+    `update bookings
+        set cancelled_at = $2,
+            cancellation_kind = $3
+      where id = $1`,
+    [bookingId, now, kind],
+  );
+  // The Slots reopen for booking immediately.
+  await client.query(
+    `delete from slot_claims
+      where source_kind = 'booking'
+        and source_id = $1`,
+    [bookingId],
+  );
+}
+
+// Staff cancel any Booking at any time, penalty-free: no cutoff, no Strike, not
+// even once the Booking has started. The Booker keeps their record clean, and
+// the Audit Log carries who did it.
+export async function cancelBookingAsStaff(
+  staff: Player,
+  rawInput: unknown,
+): Promise<{ cancellation: Cancellation; booker: Booker }> {
+  const input = parseCancelInput(rawInput);
+  const now = clock.now();
+  return runInTransaction(async (client) => {
+    const result = await client.query<CancellableAnyBookingRow>(
+      `select bookings.starts_at,
+              bookings.created_at,
+              bookings.duration_hours,
+              bookings.booker_id,
+              players.display_name as booker_name,
+              players.phone as booker_phone,
+              courts.name as court_name
+         from bookings
+         join players on players.id = bookings.booker_id
+         join courts on courts.id = bookings.court_id
+        where bookings.id = $1
+          and bookings.cancelled_at is null
+        for update of bookings`,
+      [input.bookingId],
+    );
+    const booking = result.rows[0];
+    if (!booking) {
+      throw new BookingError("booking_not_found", 404);
+    }
+
+    await releaseBooking(client, input.bookingId, "penalty_free", now);
+    const booker: Booker = {
+      id: booking.booker_id,
+      displayName: booking.booker_name,
+      phone: booking.booker_phone,
+    };
+    await recordStaffAction(client, {
+      staff: { id: staff.id, displayName: staff.displayName },
+      action: "booking_cancelled",
+      bookingId: input.bookingId,
+      subjectPlayerId: booker.id,
+      details: {
+        courtName: booking.court_name,
+        startsAt: booking.starts_at.toISOString(),
+        endsAt: new Date(
+          booking.starts_at.getTime() + booking.duration_hours * 60 * 60 * 1000,
+        ).toISOString(),
+        bookerName: booker.displayName,
+        bookerPhone: booker.phone,
+      },
+      occurredAt: now,
+    });
+    return {
+      cancellation: { bookingId: input.bookingId, kind: "penalty_free" as const },
+      booker,
+    };
+  });
+}
+
 export async function cancelBooking(
   playerId: string,
   rawInput: unknown,
@@ -460,19 +542,7 @@ export async function cancelBooking(
       throw new BookingError("cancellation_reclassified", 409);
     }
 
-    await client.query(
-      `update bookings
-          set cancelled_at = $2,
-              cancellation_kind = $3
-        where id = $1`,
-      [input.bookingId, now, kind],
-    );
-    await client.query(
-      `delete from slot_claims
-        where source_kind = 'booking'
-          and source_id = $1`,
-      [input.bookingId],
-    );
+    await releaseBooking(client, input.bookingId, kind, now);
     if (kind === "late_cancel") {
       await client.query(
         `insert into strikes (id, player_id, booking_id, reason, earned_at)
