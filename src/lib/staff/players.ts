@@ -30,7 +30,7 @@ export async function readDeskPlayers(search?: string): Promise<DeskPlayer[]> {
        from players
       where $1::text is null
          or display_name ilike '%' || $1 || '%'
-         or replace(phone, ' ', '') like '%' || $1 || '%'
+         or phone like '%' || $1 || '%'
       order by display_name, id
       limit ${LOOKUP_LIMIT}`,
     [term && term.length > 0 ? term : null],

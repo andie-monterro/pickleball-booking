@@ -9,6 +9,13 @@ import { getPool } from "@/lib/db";
 
 export type AuditAction = "booking_created" | "booking_cancelled";
 
+// Who acted. Only the id and the name are needed, so any Staff session value
+// fits, and the log keeps the name as it read at the time.
+export interface StaffIdentity {
+  id: string;
+  displayName: string;
+}
+
 export interface AuditEntryDetails {
   courtName: string;
   startsAt: string;
@@ -21,7 +28,7 @@ export interface AuditEntry {
   id: string;
   action: AuditAction;
   occurredAt: string;
-  staff: { id: string; displayName: string };
+  staff: StaffIdentity;
   bookingId: string | null;
   subjectPlayerId: string | null;
   details: AuditEntryDetails;
@@ -39,7 +46,7 @@ interface AuditEntryRow extends QueryResultRow {
 }
 
 export interface RecordedAction {
-  staff: { id: string; displayName: string };
+  staff: StaffIdentity;
   action: AuditAction;
   bookingId: string | null;
   subjectPlayerId: string | null;
@@ -69,13 +76,16 @@ export async function recordStaffAction(
   );
 }
 
-// Newest first: the desk reads the log to answer "what just happened?".
-export async function readAuditLog(): Promise<AuditEntry[]> {
+// Newest first: the desk reads the log to answer "what just happened?". The log
+// only grows, so a read is capped.
+export async function readAuditLog(limit = 200): Promise<AuditEntry[]> {
   const result = await getPool().query<AuditEntryRow>(
     `select id, staff_id, staff_display_name, action, booking_id,
             subject_player_id, details, occurred_at
        from audit_log_entries
-      order by occurred_at desc, id desc`,
+      order by occurred_at desc, id desc
+      limit $1`,
+    [limit],
   );
   return result.rows.map((row) => ({
     id: row.id,

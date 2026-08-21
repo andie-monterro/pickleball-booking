@@ -662,6 +662,24 @@ describe("staff desk HTTP API", () => {
     expect(unknown.status).toBe(404);
     expect(await unknown.json()).toEqual({ error: "player_not_found" });
 
+    const badPhone = await httpPost(
+      staffBookingsRoute,
+      "/api/staff/bookings",
+      deskBooking({ newPlayer: { displayName: "Bao Pham", phone: "0901234567" } }),
+      cookieFor(STAFF),
+    );
+    expect(badPhone.status).toBe(400);
+    expect(await badPhone.json()).toEqual({ error: "invalid_phone" });
+
+    const blankName = await httpPost(
+      staffBookingsRoute,
+      "/api/staff/bookings",
+      deskBooking({ newPlayer: { displayName: "  ", phone: WALK_IN.phone } }),
+      cookieFor(STAFF),
+    );
+    expect(blankName.status).toBe(400);
+    expect(await blankName.json()).toEqual({ error: "invalid_display_name" });
+
     const fromPlayer = await httpPost(
       staffBookingsRoute,
       "/api/staff/bookings",

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { PoolClient, QueryResultRow } from "pg";
-import { recordStaffAction } from "@/lib/audit-log";
-import { normalizedDisplayName, normalizedPhone, type Player } from "@/lib/auth/auth";
+import { recordStaffAction, type StaffIdentity } from "@/lib/audit-log";
+import { normalizedDisplayName, normalizedPhone } from "@/lib/auth/auth";
 import {
   coversInstant,
   readBookingHorizon,
@@ -397,7 +397,7 @@ function auditDetails(booking: Booking, booker: Booker) {
 // rules, that Player's own Booking Horizon. Staff attribution lives in the
 // Audit Log, written in the same transaction as the Booking.
 export async function createBookingForPlayer(
-  staff: Player,
+  staff: StaffIdentity,
   rawInput: unknown,
 ): Promise<DeskBooking> {
   const input = parseInput(rawInput);
@@ -411,7 +411,7 @@ export async function createBookingForPlayer(
       await refuseOutsideHorizon(client, booker.id, input);
       const booking = await claimBooking(client, booker.id, input, now);
       await recordStaffAction(client, {
-        staff: { id: staff.id, displayName: staff.displayName },
+        staff,
         action: "booking_created",
         bookingId: booking.id,
         subjectPlayerId: booker.id,
@@ -451,7 +451,7 @@ async function releaseBooking(
 // even once the Booking has started. The Booker keeps their record clean, and
 // the Audit Log carries who did it.
 export async function cancelBookingAsStaff(
-  staff: Player,
+  staff: StaffIdentity,
   rawInput: unknown,
 ): Promise<{ cancellation: Cancellation; booker: Booker }> {
   const input = parseCancelInput(rawInput);
@@ -485,7 +485,7 @@ export async function cancelBookingAsStaff(
       phone: booking.booker_phone,
     };
     await recordStaffAction(client, {
-      staff: { id: staff.id, displayName: staff.displayName },
+      staff,
       action: "booking_cancelled",
       bookingId: input.bookingId,
       subjectPlayerId: booker.id,
