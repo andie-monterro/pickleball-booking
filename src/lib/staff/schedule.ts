@@ -11,6 +11,7 @@ import type { QueryResultRow } from "pg";
 import { readBookingHorizon } from "@/lib/booking-horizon";
 import { clock } from "@/lib/clock";
 import { getPool } from "@/lib/db";
+import type { ClaimKind } from "@/lib/slot-claims";
 import {
   claimKey,
   formatHour,
@@ -21,6 +22,12 @@ import {
 import { addDays, parseVenueDate, venueDateFromInstant, type VenueDate } from "@/lib/venue-date";
 
 export type StaffSlotStatus = "free" | "taken" | "blocked";
+
+export interface ScheduledBlock {
+  id: string;
+  startsAt: string;
+  endsAt: string;
+}
 
 export interface ScheduledBooking {
   id: string;
@@ -38,6 +45,9 @@ export interface StaffScheduleSlot {
   start: string;
   status: StaffSlotStatus;
   booking?: ScheduledBooking;
+  // The Block holding this Slot, so the desk can remove the whole Block from
+  // any of its Slots.
+  block?: ScheduledBlock;
 }
 
 export interface StaffSchedule {
@@ -54,13 +64,16 @@ export interface StaffSchedule {
 interface ScheduleClaimRow extends QueryResultRow {
   court_id: number;
   slot_starts_at: Date;
-  source_kind: "booking" | "block";
+  source_kind: ClaimKind;
   booking_id: string | null;
   booker_id: string | null;
   booker_name: string | null;
   booker_phone: string | null;
   starts_at: Date | null;
   duration_hours: number | null;
+  block_id: string | null;
+  block_starts_at: Date | null;
+  block_slot_count: number | null;
 }
 
 export async function readStaffSchedule(dateParam?: string): Promise<StaffSchedule> {
@@ -112,6 +125,16 @@ function slotFor(
     start: start.toISOString(),
     status: statusFor(claim),
   };
+  if (claim?.block_id && claim.block_starts_at && claim.block_slot_count) {
+    slot.block = {
+      id: claim.block_id,
+      startsAt: claim.block_starts_at.toISOString(),
+      endsAt: new Date(
+        claim.block_starts_at.getTime() +
+          claim.block_slot_count * 60 * 60 * 1000,
+      ).toISOString(),
+    };
+  }
   if (
     claim?.source_kind === "booking" &&
     claim.booking_id &&
@@ -144,12 +167,18 @@ async function readScheduleClaims(date: VenueDate): Promise<ScheduleClaimRow[]> 
             bookings.starts_at,
             bookings.duration_hours,
             players.display_name as booker_name,
-            players.phone as booker_phone
+            players.phone as booker_phone,
+            blocks.id as block_id,
+            blocks.starts_at as block_starts_at,
+            blocks.slot_count as block_slot_count
        from slot_claims
        left join bookings
          on slot_claims.source_kind = 'booking'
         and bookings.id = slot_claims.source_id
        left join players on players.id = bookings.booker_id
+       left join blocks
+         on slot_claims.source_kind = 'block'
+        and blocks.id = slot_claims.source_id
       where slot_claims.slot_starts_at >= $1
         and slot_claims.slot_starts_at < $2`,
     [dayStart, nextDayStart],

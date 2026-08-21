@@ -377,6 +377,7 @@ export async function createBookingForPlayer(
         staff,
         action: "booking_created",
         bookingId: booking.id,
+        blockId: null,
         subjectPlayerId: booker.id,
         details: auditDetails(booking, booker),
         occurredAt: now,
@@ -445,6 +446,7 @@ export async function cancelBookingAsStaff(
       staff,
       action: "booking_cancelled",
       bookingId: input.bookingId,
+      blockId: null,
       subjectPlayerId: booker.id,
       details: {
         courtName: booking.court_name,
