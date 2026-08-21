@@ -121,6 +121,7 @@ describe("phone OTP authentication", () => {
         displayName: "Lan Nguyen",
         phone: NEW_PHONE,
         strikeCount: 0,
+        role: "player",
       },
     });
   });

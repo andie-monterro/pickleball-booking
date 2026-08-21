@@ -11,11 +11,16 @@ export const SESSION_MAX_AGE_SECONDS = SESSION_LIFETIME_MS / 1000;
 
 type AuthFlow = "signup" | "sign_in";
 
+// Staff endpoints are a superset of player endpoints guarded by this role, so
+// every session read carries it.
+export type PlayerRole = "player" | "staff";
+
 export type Player = {
   id: string;
   displayName: string;
   phone: string;
   strikeCount: number;
+  role: PlayerRole;
 };
 
 type Challenge = {
@@ -43,6 +48,7 @@ interface PlayerRow extends QueryResultRow {
   display_name: string;
   phone: string;
   strike_count: number;
+  is_staff: boolean;
 }
 
 interface ExistingPlayerRow extends PlayerRow {
@@ -65,7 +71,7 @@ function inputRecord(input: unknown): Record<string, unknown> {
   return input as Record<string, unknown>;
 }
 
-function normalizedPhone(value: unknown): string {
+export function normalizedPhone(value: unknown): string {
   if (typeof value !== "string") {
     throw new AuthError("invalid_phone", 400);
   }
@@ -76,7 +82,7 @@ function normalizedPhone(value: unknown): string {
   return phone;
 }
 
-function normalizedDisplayName(value: unknown): string {
+export function normalizedDisplayName(value: unknown): string {
   if (typeof value !== "string") {
     throw new AuthError("invalid_display_name", 400);
   }
@@ -93,8 +99,14 @@ function playerFromRow(row: PlayerRow): Player {
     displayName: row.display_name,
     phone: row.phone,
     strikeCount: row.strike_count,
+    role: row.is_staff ? "staff" : "player",
   };
 }
+
+const IS_STAFF_SQL = `exists (
+              select 1 from staff_accounts
+               where staff_accounts.player_id = players.id
+            ) as is_staff`;
 
 function activeChallenge(
   challenge: ChallengeRow | undefined,
@@ -176,7 +188,8 @@ async function createOrTakeOverPlayer(
     `insert into players (id, display_name, phone, created_at)
      values ($1, $2, $3, $4)
      on conflict (phone) do nothing
-     returning id, display_name, phone, 0::integer as strike_count`,
+     returning id, display_name, phone, 0::integer as strike_count,
+               false as is_staff`,
     [randomUUID(), challenge.display_name, challenge.phone, now],
   );
 
@@ -185,6 +198,7 @@ async function createOrTakeOverPlayer(
     const existing = await client.query<ExistingPlayerRow>(
       `select players.id, players.display_name, players.phone,
               current_strike_count(players.id, $2) as strike_count,
+              ${IS_STAFF_SQL},
               exists (
                 select 1 from player_signups
                  where player_signups.player_id = players.id
@@ -210,6 +224,7 @@ async function createOrTakeOverPlayer(
       displayName: challenge.display_name,
       phone: row.phone,
       strikeCount: row.strike_count,
+      role: row.is_staff ? "staff" : "player",
     };
   }
 
@@ -227,7 +242,8 @@ async function findReturningPlayer(
 ): Promise<Player> {
   const result = await client.query<PlayerRow>(
     `select players.id, players.display_name, players.phone,
-            current_strike_count(players.id, $2) as strike_count
+            current_strike_count(players.id, $2) as strike_count,
+            ${IS_STAFF_SQL}
        from players
        join player_signups on player_signups.player_id = players.id
       where players.phone = $1
@@ -321,7 +337,8 @@ export async function readPlayerSessionToken(sessionToken: string | undefined): 
   const now = clock.now();
   const result = await getPool().query<PlayerRow>(
     `select players.id, players.display_name, players.phone,
-            current_strike_count(players.id, $3) as strike_count
+            current_strike_count(players.id, $3) as strike_count,
+            ${IS_STAFF_SQL}
        from player_sessions
        join players on players.id = player_sessions.player_id
       where player_sessions.token_hash = $1
@@ -329,6 +346,19 @@ export async function readPlayerSessionToken(sessionToken: string | undefined): 
     [tokenHash, now, now],
   );
   return result.rows[0] ? playerFromRow(result.rows[0]) : null;
+}
+
+// The staff guard: an anonymous caller is unauthorized, and a player session is
+// refused outright rather than silently treated as read-only.
+export async function readStaffSession(request: Request): Promise<Player> {
+  const player = await readPlayerSession(request);
+  if (!player) {
+    throw new AuthError("unauthorized", 401);
+  }
+  if (player.role !== "staff") {
+    throw new AuthError("staff_only", 403);
+  }
+  return player;
 }
 
 export function sessionCookieValue(sessionToken: string): string {
