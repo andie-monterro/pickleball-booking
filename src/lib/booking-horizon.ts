@@ -2,17 +2,12 @@
 // Horizon lengths are venue settings data, read here at policy-evaluation time
 // so changing them in the database changes enforcement with no code change.
 
-import type { Pool, PoolClient, QueryResultRow } from "pg";
+import type { QueryResultRow } from "pg";
 import { clock } from "@/lib/clock";
-import { getPool } from "@/lib/db";
+import { getPool, type Queryable } from "@/lib/db";
 import { addDays, venueDateFromInstant, type VenueDate } from "@/lib/venue-date";
 
 export type PlayerStanding = "casual" | "member";
-
-// Either the pool or one transaction's client. A staff Booking creates its
-// light Player record and checks that Player's horizon in one transaction, so
-// the check has to run on the connection that can see the new row.
-export type Queryable = Pool | PoolClient;
 
 export interface BookingHorizon {
   standing: PlayerStanding;

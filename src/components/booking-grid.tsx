@@ -42,16 +42,31 @@ function dayNote(day: AvailabilityDay): string {
   return `Member-only. You can book it from ${day.opensToEveryoneOn}.`;
 }
 
+function bookingErrorMessage(error: string | undefined): string {
+  if (error === "slot_taken") {
+    return "This slot was just taken. Choose another slot.";
+  }
+  // The ban can start under an open page: the Late Cancel that earns the third
+  // Strike happens in this same session.
+  if (error === "booking_banned") {
+    return "You have a Booking Ban and cannot book right now.";
+  }
+  return "The booking could not be completed. Choose another slot.";
+}
+
 type BookingGridProps = {
   availability: AvailabilityResponse;
   bookings: Booking[];
   signedIn: boolean;
+  // The instant a Booking Ban runs out, when one is in force for this viewer.
+  bookingBanEndsAt: string | null;
 };
 
 export function BookingGrid({
   availability,
   bookings,
   signedIn,
+  bookingBanEndsAt,
 }: BookingGridProps) {
   const router = useRouter();
   const [selectedSlots, setSelectedSlots] = useState<AvailabilitySlot[]>([]);
@@ -102,11 +117,7 @@ export function BookingGrid({
       });
       if (!response.ok) {
         const body = (await response.json()) as { error?: string };
-        setError(
-          body.error === "slot_taken"
-            ? "This slot was just taken. Choose another slot."
-            : "The booking could not be completed. Choose another slot.",
-        );
+        setError(bookingErrorMessage(body.error));
         router.refresh();
         return;
       }
@@ -190,6 +201,18 @@ export function BookingGrid({
         ))}
       </nav>
 
+      {bookingBanEndsAt && (
+        <p className={styles.banNotice} role="status">
+          <strong>You have a Booking Ban.</strong> You cannot book a Slot
+          yourself until{" "}
+          <time dateTime={bookingBanEndsAt}>
+            {VENUE_DATE_TIME.format(new Date(bookingBanEndsAt))}
+          </time>
+          . Your Bookings stay, you can still cancel them, and the front desk
+          can book for you.
+        </p>
+      )}
+
       {!signedIn && (
         <p className={styles.signInPrompt}>
           <a href={`/sign-in?returnTo=${encodeURIComponent(`/?date=${availability.date}`)}`}>
@@ -228,7 +251,10 @@ export function BookingGrid({
                       candidate.courtId === slot.courtId && candidate.start === slot.start,
                   );
                   const bookable =
-                    signedIn && slot.status === "free" && slot.label !== "Past";
+                    signedIn &&
+                    !bookingBanEndsAt &&
+                    slot.status === "free" &&
+                    slot.label !== "Past";
                   return (
                     <td className={STATUS_CLASS[slot.status]} key={court.id}>
                       {bookable ? (
