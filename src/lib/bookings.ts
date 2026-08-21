@@ -3,13 +3,9 @@ import type { PoolClient, QueryResultRow } from "pg";
 import { recordStaffAction, type StaffIdentity } from "@/lib/audit-log";
 import { normalizedDisplayName, normalizedPhone } from "@/lib/auth/auth";
 import { readBookingBanEndsAt } from "@/lib/booking-ban";
-import {
-  coversInstant,
-  readBookingHorizon,
-  type Queryable,
-} from "@/lib/booking-horizon";
+import { coversInstant, readBookingHorizon } from "@/lib/booking-horizon";
 import { clock } from "@/lib/clock";
-import { getPool } from "@/lib/db";
+import { getPool, type Queryable } from "@/lib/db";
 
 const CANCELLATION_CUTOFF_MS = 6 * 60 * 60 * 1000;
 const CANCELLATION_GRACE_MS = 15 * 60 * 1000;

@@ -9,8 +9,7 @@
 // the transaction that creates the Booking.
 
 import type { QueryResultRow } from "pg";
-import type { Queryable } from "@/lib/booking-horizon";
-import { getPool } from "@/lib/db";
+import { getPool, type Queryable } from "@/lib/db";
 
 interface BanRow extends QueryResultRow {
   ban_ends_at: Date | null;
