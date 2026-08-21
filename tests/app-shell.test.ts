@@ -113,6 +113,9 @@ describe("app shell", () => {
       expect(deskResponse.status).toBe(200);
       expect(desk).toContain('aria-label="Staff schedule for');
       expect(desk).toContain("Audit Log");
+      // Staff manage Staff accounts from the desk itself.
+      expect(desk).toContain("Staff accounts");
+      expect(desk).toContain("Onboard a front-desk person");
 
       const playerResponse = await fetch(`${baseUrl}/staff`, {
         headers: { cookie: `pb_session=${accounts[1].token}` },
@@ -120,6 +123,7 @@ describe("app shell", () => {
       const playerPage = await playerResponse.text();
       expect(playerPage).toContain("This page is for Staff.");
       expect(playerPage).not.toContain('aria-label="Staff schedule for');
+      expect(playerPage).not.toContain("Onboard a front-desk person");
     } finally {
       await pool.query("delete from player_sessions where player_id = any($1)", [
         accounts.map((account) => account.id),

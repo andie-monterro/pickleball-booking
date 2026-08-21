@@ -45,6 +45,11 @@ DATABASE_URL=... npm run staff:grant -- --revoke +84901234567
 
 Then that person signs in at `/sign-in` and opens `/staff`.
 
+From there on, Staff onboard and offboard each other in the app: the Staff
+accounts panel on `/staff` grants the role to a phone number and takes it away
+again, and both actions land in the Audit Log. The last remaining account cannot
+be deactivated, so the desk always keeps a way in.
+
 ## Testing
 
 Tests call route handlers over the HTTP seam (real `Request` in, real `Response` out — see `tests/harness/http.ts`) against a real test Postgres. Time-dependent code reads the injectable clock in `src/lib/clock.ts`; tests set it with `setClock(fixedClock(...))`.
