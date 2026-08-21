@@ -164,6 +164,9 @@ function parseCancelInput(input: unknown): CancelBookingInput {
 }
 
 function parseBookerNaming(input: unknown): BookerNaming {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new BookingError("invalid_request", 400);
+  }
   const record = input as Record<string, unknown>;
   if (record.playerId !== undefined) {
     if (typeof record.playerId !== "string" || record.playerId.length === 0) {
@@ -513,9 +516,7 @@ export async function cancelBooking(
 ): Promise<{ cancellation: Cancellation; strikeCount: number }> {
   const input = parseCancelInput(rawInput);
   const now = clock.now();
-  const client = await getPool().connect();
-  try {
-    await client.query("begin");
+  return runInTransaction(async (client) => {
     const bookingResult = await client.query<CancellableBookingRow>(
       `select starts_at, created_at
          from bookings
@@ -554,17 +555,11 @@ export async function cancelBooking(
       "select current_strike_count($1, $2) as strike_count",
       [playerId, now],
     );
-    await client.query("commit");
     return {
       cancellation: { bookingId: input.bookingId, kind },
       strikeCount: strikeResult.rows[0]?.strike_count ?? 0,
     };
-  } catch (error) {
-    await client.query("rollback");
-    throw error;
-  } finally {
-    client.release();
-  }
+  });
 }
 
 export async function readUpcomingBookings(playerId: string): Promise<Booking[]> {

@@ -92,6 +92,13 @@ export async function readStaffSchedule(dateParam?: string): Promise<StaffSchedu
   };
 }
 
+function statusFor(claim: ScheduleClaimRow | undefined): StaffSlotStatus {
+  if (!claim) {
+    return "free";
+  }
+  return claim.source_kind === "booking" ? "taken" : "blocked";
+}
+
 function slotFor(
   court: VenueCourt,
   hour: number,
@@ -103,7 +110,7 @@ function slotFor(
     courtName: court.name,
     hour: formatHour(hour),
     start: start.toISOString(),
-    status: claim ? (claim.source_kind === "booking" ? "taken" : "blocked") : "free",
+    status: statusFor(claim),
   };
   if (
     claim?.source_kind === "booking" &&

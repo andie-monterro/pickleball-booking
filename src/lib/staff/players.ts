@@ -32,8 +32,8 @@ export async function readDeskPlayers(search?: string): Promise<DeskPlayer[]> {
          or display_name ilike '%' || $1 || '%'
          or phone like '%' || $1 || '%'
       order by display_name, id
-      limit ${LOOKUP_LIMIT}`,
-    [term && term.length > 0 ? term : null],
+      limit $2`,
+    [term && term.length > 0 ? term : null, LOOKUP_LIMIT],
   );
   return result.rows.map((row) => ({
     id: row.id,

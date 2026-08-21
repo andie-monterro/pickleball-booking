@@ -103,10 +103,7 @@ function playerFromRow(row: PlayerRow): Player {
   };
 }
 
-const IS_STAFF_SQL = `exists (
-              select 1 from staff_accounts
-               where staff_accounts.player_id = players.id
-            ) as is_staff`;
+const IS_STAFF_SQL = `exists (select 1 from staff_accounts where staff_accounts.player_id = players.id) as is_staff`;
 
 function activeChallenge(
   challenge: ChallengeRow | undefined,
