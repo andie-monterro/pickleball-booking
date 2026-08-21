@@ -247,7 +247,7 @@ export function StaffDesk({
     ? new Date(new Date(lastSelected.start).getTime() + HOUR_MS)
     : undefined;
   // A Booking covers one or two Slots, so a longer range can only be blocked.
-  const bookable = selectedSlots.length <= 2;
+  const canBook = selectedSlots.length <= 2;
 
   return (
     <>
@@ -377,7 +377,7 @@ export function StaffDesk({
         >
           <div>
             <p className={styles.eyebrow}>
-              {bookable ? "Book or block these Slots" : "Block these Slots"}
+              {canBook ? "Book or block these Slots" : "Block these Slots"}
             </p>
             <h3>{firstSelected.courtName}</h3>
             <p>
@@ -385,37 +385,35 @@ export function StaffDesk({
               {VENUE_TIME.format(selectionEnd)}
             </p>
             <p className={styles.hint}>
-              Tap the next free Slot on this Court to extend the range. A Booking
-              covers one or two Slots; a Block covers as many as you pick.
+              {canBook
+                ? "Tap the next free Slot on this Court to extend the range."
+                : "This range is longer than two Slots, so it can only be blocked."}
             </p>
-            {!bookable && (
-              <p className={styles.hint}>
-                This range is longer than two Slots, so it can only be blocked.
-              </p>
-            )}
             {blockError && (
               <p className={styles.error} role="alert">
                 {blockError}
               </p>
             )}
-            {bookable && (
-            <label className={styles.field}>
-              Booker
-              <select
-                onChange={(event) => setBookerChoice(event.target.value)}
-                value={bookerChoice}
-              >
-                {players.map((player) => (
-                  <option key={player.id} value={player.id}>
-                    {player.displayName} — {player.phone}
-                    {player.memberUntil ? ` (Member until ${player.memberUntil})` : ""}
-                  </option>
-                ))}
-                <option value={NEW_PLAYER}>New Player (walk-in)</option>
-              </select>
-            </label>
+            {canBook && (
+              <label className={styles.field}>
+                Booker
+                <select
+                  onChange={(event) => setBookerChoice(event.target.value)}
+                  value={bookerChoice}
+                >
+                  {players.map((player) => (
+                    <option key={player.id} value={player.id}>
+                      {player.displayName} — {player.phone}
+                      {player.memberUntil
+                        ? ` (Member until ${player.memberUntil})`
+                        : ""}
+                    </option>
+                  ))}
+                  <option value={NEW_PLAYER}>New Player (walk-in)</option>
+                </select>
+              </label>
             )}
-            {bookable && bookerChoice === NEW_PLAYER && (
+            {canBook && bookerChoice === NEW_PLAYER && (
               <div className={styles.newPlayer}>
                 <label className={styles.field}>
                   Name
@@ -440,7 +438,7 @@ export function StaffDesk({
                 </p>
               </div>
             )}
-            {bookable && (
+            {canBook && (
               <p>The named Player is the Booker, under their own Booking Horizon.</p>
             )}
             {createError && (
@@ -466,7 +464,7 @@ export function StaffDesk({
             >
               {blocking ? "Blocking…" : "Place Block"}
             </button>
-            {bookable && (
+            {canBook && (
               <button
                 className={styles.primaryButton}
                 disabled={submitting || blocking}
