@@ -7,6 +7,7 @@ import * as availabilityRoute from "@/app/api/availability/route";
 import * as bookingsRoute from "@/app/api/bookings/route";
 import * as auditLogRoute from "@/app/api/staff/audit-log/route";
 import * as staffBookingsRoute from "@/app/api/staff/bookings/route";
+import * as staffScheduleRoute from "@/app/api/staff/schedule/route";
 import { resetOtpProvider, setOtpProvider } from "@/lib/auth/otp-provider";
 import { fixedClock, resetClock, setClock } from "@/lib/clock";
 import { getPool } from "@/lib/db";
@@ -426,6 +427,175 @@ describe("staff desk HTTP API", () => {
 
     const upcoming = await httpGet(bookingsRoute, "/api/bookings", cookieFor(PLAYER));
     expect(await upcoming.json()).toMatchObject({ bookings: [{ id: booking.id }] });
+  });
+
+  it("records every staff creation and cancellation in the Audit Log", async () => {
+    const created = await httpPost(
+      staffBookingsRoute,
+      "/api/staff/bookings",
+      deskBooking({ newPlayer: WALK_IN }),
+      cookieFor(STAFF),
+    );
+    const { booking, booker } = await created.json();
+
+    const cancelledAt = new Date("2026-08-21T05:30:00.000Z");
+    setClock(fixedClock(cancelledAt));
+    await httpDelete(
+      staffBookingsRoute,
+      "/api/staff/bookings",
+      { bookingId: booking.id },
+      cookieFor(STAFF),
+    );
+
+    const log = await httpGet(auditLogRoute, "/api/staff/audit-log", cookieFor(STAFF));
+    expect(log.status).toBe(200);
+    const { entries } = await log.json();
+    expect(entries).toHaveLength(2);
+    // Newest first.
+    expect(entries[0]).toMatchObject({
+      action: "booking_cancelled",
+      occurredAt: cancelledAt.toISOString(),
+      staff: { id: STAFF.playerId, displayName: STAFF.displayName },
+      bookingId: booking.id,
+      subjectPlayerId: booker.id,
+      details: {
+        courtName: "Court 1",
+        startsAt: SLOT,
+        endsAt: NEXT_SLOT,
+        bookerName: WALK_IN.displayName,
+        bookerPhone: WALK_IN.phone,
+      },
+    });
+    expect(entries[1]).toMatchObject({
+      action: "booking_created",
+      occurredAt: NOW.toISOString(),
+      staff: { id: STAFF.playerId, displayName: STAFF.displayName },
+      bookingId: booking.id,
+      subjectPlayerId: booker.id,
+      details: { courtName: "Court 1", bookerName: WALK_IN.displayName },
+    });
+
+    // Only Staff may read the log.
+    const playerRead = await httpGet(
+      auditLogRoute,
+      "/api/staff/audit-log",
+      cookieFor(PLAYER),
+    );
+    expect(playerRead.status).toBe(403);
+  });
+
+  // A database invariant, like the no-double-booking constraint: the Audit Log
+  // exists so disputes stay resolvable, so no code path may rewrite it.
+  it("keeps the Audit Log append-only in the database", async () => {
+    await httpPost(
+      staffBookingsRoute,
+      "/api/staff/bookings",
+      deskBooking({ playerId: PLAYER.playerId }),
+      cookieFor(STAFF),
+    );
+
+    const pool = getPool();
+    await expect(
+      pool.query("update audit_log_entries set action = 'booking_cancelled'"),
+    ).rejects.toThrow(/append-only/);
+    await expect(pool.query("delete from audit_log_entries")).rejects.toThrow(
+      /append-only/,
+    );
+
+    const log = await httpGet(auditLogRoute, "/api/staff/audit-log", cookieFor(STAFF));
+    const { entries } = await log.json();
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ action: "booking_created" });
+  });
+
+  it("shows booker identity on the staff schedule while the public view stays anonymous", async () => {
+    await httpPost(
+      staffBookingsRoute,
+      "/api/staff/bookings",
+      deskBooking({ playerId: PLAYER.playerId, durationHours: 2 }),
+      cookieFor(STAFF),
+    );
+
+    const schedule = await httpGet(
+      staffScheduleRoute,
+      "/api/staff/schedule?date=2026-08-21",
+      cookieFor(STAFF),
+    );
+    expect(schedule.status).toBe(200);
+    const body = await schedule.json();
+    expect(body).toMatchObject({ date: "2026-08-21", timeZone: "Asia/Ho_Chi_Minh" });
+
+    const taken = body.slots.filter(
+      (slot: { status: string }) => slot.status === "taken",
+    );
+    expect(taken).toHaveLength(2);
+    expect(taken[0]).toMatchObject({
+      courtId: 1,
+      courtName: "Court 1",
+      start: SLOT,
+      booking: {
+        bookerId: PLAYER.playerId,
+        bookerName: PLAYER.displayName,
+        bookerPhone: PLAYER.phone,
+        startsAt: SLOT,
+      },
+    });
+    expect(
+      body.slots.find(
+        (slot: { courtId: number; start: string }) =>
+          slot.courtId === 2 && slot.start === SLOT,
+      ),
+    ).toEqual({
+      courtId: 2,
+      courtName: "Court 2",
+      hour: "14:00",
+      start: SLOT,
+      status: "free",
+    });
+
+    const publicView = await httpGet(
+      availabilityRoute,
+      "/api/availability?date=2026-08-21",
+    );
+    const publicBody = await publicView.text();
+    expect(publicBody).toContain('"taken"');
+    expect(publicBody).not.toContain(PLAYER.displayName);
+    expect(publicBody).not.toContain(PLAYER.phone);
+
+    const playerRead = await httpGet(
+      staffScheduleRoute,
+      "/api/staff/schedule?date=2026-08-21",
+      cookieFor(PLAYER),
+    );
+    expect(playerRead.status).toBe(403);
+    const anonymousRead = await httpGet(
+      staffScheduleRoute,
+      "/api/staff/schedule?date=2026-08-21",
+    );
+    expect(anonymousRead.status).toBe(401);
+  });
+
+  it("shows the staff schedule for a day past the Staff member's own horizon", async () => {
+    // The desk books for the named Player, so a Staff member's own standing
+    // never hides a day from them.
+    const publicView = await httpGet(
+      availabilityRoute,
+      "/api/availability?date=2026-08-28",
+      cookieFor(STAFF),
+    );
+    const publicBody = await publicView.json();
+    expect(publicBody.slots[0]).toMatchObject({ status: "outside_horizon" });
+
+    const schedule = await httpGet(
+      staffScheduleRoute,
+      "/api/staff/schedule?date=2026-08-28",
+      cookieFor(STAFF),
+    );
+    const body = await schedule.json();
+    expect(body.date).toBe("2026-08-28");
+    expect(
+      body.slots.every((slot: { status: string }) => slot.status === "free"),
+    ).toBe(true);
   });
 
   it("refuses a desk Booking without a named Player, and one from a player session", async () => {
