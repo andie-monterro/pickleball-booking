@@ -20,7 +20,7 @@ import {
   normalizedPhone,
 } from "@/lib/auth/auth";
 import { clock } from "@/lib/clock";
-import { getPool } from "@/lib/db";
+import { getPool, runInTransaction } from "@/lib/db";
 
 export interface StaffAccount {
   id: string;
@@ -100,23 +100,6 @@ function parseAccountId(input: unknown): string {
   return record.playerId;
 }
 
-async function runInTransaction<T>(
-  run: (client: PoolClient) => Promise<T>,
-): Promise<T> {
-  const client = await getPool().connect();
-  try {
-    await client.query("begin");
-    const result = await run(client);
-    await client.query("commit");
-    return result;
-  } catch (error) {
-    await client.query("rollback");
-    throw error;
-  } finally {
-    client.release();
-  }
-}
-
 const ACCOUNT_COLUMNS = `staff_accounts.player_id,
             staff_accounts.granted_at,
             players.display_name,
@@ -139,24 +122,26 @@ async function resolveAccountPlayer(
   naming: StaffAccountNaming,
   now: Date,
 ): Promise<PlayerRecordRow> {
-  const existing = await client.query<PlayerRecordRow>(
+  if (naming.displayName) {
+    // The insert stands only when the number is new: an existing record keeps
+    // its own name, which the staff panel has no business rewriting.
+    await client.query(
+      `insert into players (id, display_name, phone, created_at)
+       values ($1, $2, $3, $4)
+       on conflict (phone) do nothing`,
+      [randomUUID(), naming.displayName, naming.phone, now],
+    );
+  }
+  const result = await client.query<PlayerRecordRow>(
     "select id, display_name, phone from players where phone = $1 for update",
     [naming.phone],
   );
-  const row = existing.rows[0];
-  if (row) {
-    return row;
-  }
-  if (!naming.displayName) {
+  const row = result.rows[0];
+  // Nothing on file, and no name to make a record with.
+  if (!row) {
     throw new AuthError("invalid_display_name", 400);
   }
-  const inserted = await client.query<PlayerRecordRow>(
-    `insert into players (id, display_name, phone, created_at)
-     values ($1, $2, $3, $4)
-     returning id, display_name, phone`,
-    [randomUUID(), naming.displayName, naming.phone, now],
-  );
-  return inserted.rows[0];
+  return row;
 }
 
 export async function createStaffAccount(

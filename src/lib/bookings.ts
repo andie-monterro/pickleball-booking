@@ -8,7 +8,7 @@ import {
   type Queryable,
 } from "@/lib/booking-horizon";
 import { clock } from "@/lib/clock";
-import { getPool } from "@/lib/db";
+import { getPool, runInTransaction } from "@/lib/db";
 
 const CANCELLATION_CUTOFF_MS = 6 * 60 * 60 * 1000;
 const CANCELLATION_GRACE_MS = 15 * 60 * 1000;
@@ -304,23 +304,6 @@ async function refuseOutsideHorizon(
     if (!coversInstant(horizon, slotStart)) {
       throw new BookingError("outside_horizon", 400);
     }
-  }
-}
-
-async function runInTransaction<T>(
-  run: (client: PoolClient) => Promise<T>,
-): Promise<T> {
-  const client = await getPool().connect();
-  try {
-    await client.query("begin");
-    const result = await run(client);
-    await client.query("commit");
-    return result;
-  } catch (error) {
-    await client.query("rollback");
-    throw error;
-  } finally {
-    client.release();
   }
 }
 
