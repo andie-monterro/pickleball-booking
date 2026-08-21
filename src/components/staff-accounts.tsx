@@ -25,6 +25,15 @@ const DEACTIVATE_ERROR: Record<string, string> = {
     "That Staff account is already gone. Refresh the page to see the current list.",
 };
 
+async function readError(
+  response: Response,
+  messages: Record<string, string>,
+  fallback: string,
+): Promise<string> {
+  const body = (await response.json()) as { error?: string };
+  return messages[body.error ?? ""] ?? fallback;
+}
+
 type StaffAccountsProps = {
   accounts: StaffAccount[];
   signedInStaffId: string;
@@ -39,15 +48,6 @@ export function StaffAccounts({ accounts, signedInStaffId }: StaffAccountsProps)
   const [pendingRemoval, setPendingRemoval] = useState<string>();
   const [deactivating, setDeactivating] = useState(false);
   const [deactivateError, setDeactivateError] = useState<string>();
-
-  const readError = async (
-    response: Response,
-    messages: Record<string, string>,
-    fallback: string,
-  ): Promise<string> => {
-    const body = (await response.json()) as { error?: string };
-    return messages[body.error ?? ""] ?? fallback;
-  };
 
   const createAccount = async () => {
     setCreating(true);

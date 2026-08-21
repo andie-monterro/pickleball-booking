@@ -76,11 +76,15 @@ function auditDetails(account: StaffAccount): StaffAccountAuditDetails {
   return { accountName: account.displayName, accountPhone: account.phone };
 }
 
-function parseNaming(input: unknown): StaffAccountNaming {
+function requestBodyRecord(input: unknown): Record<string, unknown> {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     throw new StaffAccountError("invalid_request", 400);
   }
-  const record: Record<string, unknown> = { ...input };
+  return { ...input };
+}
+
+function parseNaming(input: unknown): StaffAccountNaming {
+  const record = requestBodyRecord(input);
   return {
     phone: normalizedPhone(record.phone),
     ...(record.displayName === undefined
@@ -90,10 +94,7 @@ function parseNaming(input: unknown): StaffAccountNaming {
 }
 
 function parseAccountId(input: unknown): string {
-  if (!input || typeof input !== "object" || Array.isArray(input)) {
-    throw new StaffAccountError("invalid_request", 400);
-  }
-  const record: Record<string, unknown> = { ...input };
+  const record = requestBodyRecord(input);
   if (typeof record.playerId !== "string" || record.playerId.length === 0) {
     throw new StaffAccountError("invalid_request", 400);
   }
