@@ -1,6 +1,8 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { createHash } from "node:crypto";
 import { createServer } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { getPool } from "@/lib/db";
 
 let app: ChildProcessWithoutNullStreams;
 let baseUrl: string;
@@ -72,6 +74,75 @@ describe("app shell", () => {
     const signInResponse = await fetch(`${baseUrl}/sign-in`);
 
     expect(signInResponse.status).toBe(200);
+  });
+
+  it("opens the staff desk for a Staff session and refuses a player session", async () => {
+    const pool = getPool();
+    const accounts = [
+      { id: "shell-staff", name: "Desk One", phone: "+84903000001", token: "shell-staff-session" },
+      { id: "shell-player", name: "Lan Nguyen", phone: "+84903000002", token: "shell-player-session" },
+    ];
+    const now = new Date();
+    try {
+      for (const account of accounts) {
+        await pool.query(
+          `insert into players (id, display_name, phone, created_at)
+           values ($1, $2, $3, $4)`,
+          [account.id, account.name, account.phone, now],
+        );
+        await pool.query(
+          `insert into player_sessions (token_hash, player_id, expires_at, created_at)
+           values ($1, $2, $3, $4)`,
+          [
+            createHash("sha256").update(account.token).digest("hex"),
+            account.id,
+            new Date(now.getTime() + 60 * 60 * 1000),
+            now,
+          ],
+        );
+      }
+      await pool.query(
+        "insert into staff_accounts (player_id, granted_at) values ($1, $2)",
+        [accounts[0].id, now],
+      );
+
+      const deskResponse = await fetch(`${baseUrl}/staff`, {
+        headers: { cookie: `pb_session=${accounts[0].token}` },
+      });
+      const desk = await deskResponse.text();
+      expect(deskResponse.status).toBe(200);
+      expect(desk).toContain('aria-label="Staff schedule for');
+      expect(desk).toContain("Audit Log");
+
+      const playerResponse = await fetch(`${baseUrl}/staff`, {
+        headers: { cookie: `pb_session=${accounts[1].token}` },
+      });
+      const playerPage = await playerResponse.text();
+      expect(playerPage).toContain("This page is for Staff.");
+      expect(playerPage).not.toContain('aria-label="Staff schedule for');
+    } finally {
+      await pool.query("delete from player_sessions where player_id = any($1)", [
+        accounts.map((account) => account.id),
+      ]);
+      await pool.query("delete from staff_accounts where player_id = any($1)", [
+        accounts.map((account) => account.id),
+      ]);
+      await pool.query("delete from players where id = any($1)", [
+        accounts.map((account) => account.id),
+      ]);
+    }
+  });
+
+  it("keeps the staff desk behind a Staff session", async () => {
+    const response = await fetch(`${baseUrl}/staff`);
+    const page = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(page).toContain("Staff desk");
+    expect(page).toContain("href=\"/sign-in?returnTo=%2Fstaff\"");
+    // The desk is the only place booker identity appears, so an anonymous
+    // visitor must not get a schedule at all.
+    expect(page).not.toContain('aria-label="Staff schedule');
   });
 
   it.each(["/\\evil.example", "http://app.local//evil.example"])(
