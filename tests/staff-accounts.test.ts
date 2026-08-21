@@ -279,6 +279,7 @@ describe("staff account management HTTP API", () => {
       occurredAt: offboardedAt.toISOString(),
       staff: { id: DESK.playerId, displayName: DESK.displayName },
       bookingId: null,
+      blockId: null,
       subjectPlayerId: account.id,
       details: { accountName: RECRUIT.displayName, accountPhone: RECRUIT.phone },
     });
@@ -287,6 +288,7 @@ describe("staff account management HTTP API", () => {
       occurredAt: NOW.toISOString(),
       staff: { id: DESK.playerId, displayName: DESK.displayName },
       bookingId: null,
+      blockId: null,
       subjectPlayerId: account.id,
       details: { accountName: RECRUIT.displayName, accountPhone: RECRUIT.phone },
     });

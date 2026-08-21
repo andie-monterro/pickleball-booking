@@ -2,13 +2,18 @@ import { randomUUID } from "node:crypto";
 import type { PoolClient, QueryResultRow } from "pg";
 import { recordStaffAction, type StaffIdentity } from "@/lib/audit-log";
 import { normalizedDisplayName, normalizedPhone } from "@/lib/auth/auth";
-import {
-  coversInstant,
-  readBookingHorizon,
-  type Queryable,
-} from "@/lib/booking-horizon";
+import { readBookingBanEndsAt } from "@/lib/booking-ban";
+import { coversInstant, readBookingHorizon } from "@/lib/booking-horizon";
 import { clock } from "@/lib/clock";
-import { getPool, runInTransaction } from "@/lib/db";
+import { getPool, runInTransaction, type Queryable } from "@/lib/db";
+import {
+  claimSlots,
+  isSlotTaken,
+  readClaimableCourt,
+  releaseSlots,
+  slotRangeEnd,
+  type ClaimRange,
+} from "@/lib/slot-claims";
 
 const CANCELLATION_CUTOFF_MS = 6 * 60 * 60 * 1000;
 const CANCELLATION_GRACE_MS = 15 * 60 * 1000;
@@ -69,11 +74,6 @@ interface BookingRow extends QueryResultRow {
   created_at: Date;
 }
 
-interface CourtAvailabilityRow extends QueryResultRow {
-  name: string;
-  open_slot_count: number;
-}
-
 interface CancellableBookingRow extends QueryResultRow {
   starts_at: Date;
   created_at: Date;
@@ -97,8 +97,6 @@ interface CancellableAnyBookingRow extends CancellableBookingRow {
   duration_hours: number;
 }
 
-type PostgresError = Error & { code?: string };
-
 export class BookingError extends Error {
   constructor(
     readonly code:
@@ -107,11 +105,15 @@ export class BookingError extends Error {
       | "slot_not_bookable"
       | "slot_taken"
       | "outside_horizon"
+      | "booking_banned"
       | "booking_not_found"
       | "booking_started"
       | "cancellation_reclassified"
       | "player_not_found",
     readonly status: number,
+    // When the refusal is a Booking Ban, the instant it runs out, so the Player
+    // is told when they may book again.
+    readonly banEndsAt?: string,
   ) {
     super(code);
   }
@@ -254,41 +256,23 @@ function bookingFromRow(row: BookingRow, at: Date): Booking {
   };
 }
 
-async function readBookableCourt(
+function claimRange(input: CreateBookingInput): ClaimRange {
+  return {
+    courtId: input.courtId,
+    startsAt: input.startsAt,
+    slotCount: input.durationHours,
+  };
+}
+
+async function readBookableCourtName(
   client: PoolClient,
   input: CreateBookingInput,
-): Promise<CourtAvailabilityRow> {
-  const result = await client.query<CourtAvailabilityRow>(
-    `select courts.name,
-            (select count(*)::integer
-               from generate_series(0, $3::integer - 1) as slot(slot_number)
-              where exists (
-                select 1
-                  from venue_settings
-                  join opening_hours
-                    on opening_hours.day_of_week = extract(
-                      dow from ($2::timestamptz + slot.slot_number * interval '1 hour')
-                        at time zone venue_settings.venue_time_zone
-                    )
-                 where venue_settings.id = 1
-                   and extract(
-                     hour from ($2::timestamptz + slot.slot_number * interval '1 hour')
-                       at time zone venue_settings.venue_time_zone
-                   ) >= opening_hours.start_hour
-                   and extract(
-                     hour from ($2::timestamptz + slot.slot_number * interval '1 hour')
-                       at time zone venue_settings.venue_time_zone
-                   ) < opening_hours.end_hour
-              )) as open_slot_count
-       from courts
-      where courts.id = $1`,
-    [input.courtId, input.startsAt, input.durationHours],
-  );
-  const court = result.rows[0];
-  if (!court || court.open_slot_count !== input.durationHours) {
+): Promise<string> {
+  const court = await readClaimableCourt(client, claimRange(input));
+  if (!court || court.openSlotCount !== input.durationHours) {
     throw new BookingError("slot_not_bookable", 400);
   }
-  return court;
+  return court.name;
 }
 
 // Whole-day horizon: every venue day the Booking touches must be inside the
@@ -307,10 +291,23 @@ async function refuseOutsideHorizon(
   }
 }
 
+// The ban gates self-service booking only: cancelling stays possible, existing
+// Bookings are kept, and Staff still book for a banned Player at the desk.
+async function refuseBannedBooker(
+  db: Queryable,
+  playerId: string,
+  now: Date,
+): Promise<void> {
+  const banEndsAt = await readBookingBanEndsAt(playerId, now, db);
+  if (banEndsAt) {
+    throw new BookingError("booking_banned", 403, banEndsAt.toISOString());
+  }
+}
+
 // No-double-booking is a database invariant: the loser of a race on a Slot sees
 // the uniqueness violation and gets a clean "slot taken".
 function rethrowAsSlotTaken(error: unknown): never {
-  if ((error as PostgresError).code === "23505") {
+  if (isSlotTaken(error)) {
     throw new BookingError("slot_taken", 409);
   }
   throw error;
@@ -322,27 +319,20 @@ async function claimBooking(
   input: CreateBookingInput,
   now: Date,
 ): Promise<Booking> {
-  const court = await readBookableCourt(client, input);
+  const courtName = await readBookableCourtName(client, input);
   const id = randomUUID();
   await client.query(
     `insert into bookings (id, booker_id, court_id, starts_at, duration_hours, created_at)
      values ($1, $2, $3, $4, $5, $6)`,
     [id, bookerId, input.courtId, input.startsAt, input.durationHours, now],
   );
-  await client.query(
-    `insert into slot_claims (court_id, slot_starts_at, source_kind, source_id)
-     select $1, $2::timestamptz + slot.slot_number * interval '1 hour', 'booking', $3
-       from generate_series(0, $4::integer - 1) as slot(slot_number)`,
-    [input.courtId, input.startsAt, id, input.durationHours],
-  );
+  await claimSlots(client, claimRange(input), "booking", id);
   return {
     id,
     courtId: input.courtId,
-    courtName: court.name,
+    courtName,
     startsAt: input.startsAt.toISOString(),
-    endsAt: new Date(
-      input.startsAt.getTime() + input.durationHours * 60 * 60 * 1000,
-    ).toISOString(),
+    endsAt: slotRangeEnd(claimRange(input)).toISOString(),
     createdAt: now.toISOString(),
     cancellationKind: "penalty_free",
   };
@@ -361,6 +351,7 @@ export async function createBooking(playerId: string, rawInput: unknown): Promis
 
   try {
     return await runInTransaction(async (client) => {
+      await refuseBannedBooker(client, playerId, now);
       await refuseOutsideHorizon(client, playerId, input);
       return claimBooking(client, playerId, input, now);
     });
@@ -400,6 +391,7 @@ export async function createBookingForPlayer(
         staff,
         action: "booking_created",
         bookingId: booking.id,
+        blockId: null,
         subjectPlayerId: booker.id,
         details: auditDetails(booking, booker),
         occurredAt: now,
@@ -424,13 +416,7 @@ async function releaseBooking(
       where id = $1`,
     [bookingId, now, kind],
   );
-  // The Slots reopen for booking immediately.
-  await client.query(
-    `delete from slot_claims
-      where source_kind = 'booking'
-        and source_id = $1`,
-    [bookingId],
-  );
+  await releaseSlots(client, "booking", bookingId);
 }
 
 // Staff cancel any Booking at any time, penalty-free: no cutoff, no Strike, not
@@ -474,6 +460,7 @@ export async function cancelBookingAsStaff(
       staff,
       action: "booking_cancelled",
       bookingId: input.bookingId,
+      blockId: null,
       subjectPlayerId: booker.id,
       details: {
         courtName: booking.court_name,

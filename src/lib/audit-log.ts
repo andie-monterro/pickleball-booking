@@ -10,6 +10,8 @@ import { getPool } from "@/lib/db";
 export type AuditAction =
   | "booking_created"
   | "booking_cancelled"
+  | "block_placed"
+  | "block_removed"
   | "staff_account_created"
   | "staff_account_deactivated";
 
@@ -20,17 +22,18 @@ export interface StaffIdentity {
   displayName: string;
 }
 
-// An entry stays readable on its own, so it snapshots what the action was
-// about. What that is depends on the action, so details is a union: a Booking's
-// court, time and Booker, or the name and phone of the Staff account granted or
-// revoked. Readers tell them apart by the fields, not by the action, so a
-// details shape can never be read as the wrong one.
+// An entry stays readable on its own, years later, whether or not the records it
+// describes still exist. What it snapshots depends on the action, so details is
+// a union: the Slots an action took — a Booking or a Block, and a Block has no
+// Booker — or the name and phone of the Staff account granted or revoked.
+// Readers tell them apart by the fields, not by the action, so a details shape
+// can never be read as the wrong one.
 export interface BookingAuditDetails {
   courtName: string;
   startsAt: string;
   endsAt: string;
-  bookerName: string;
-  bookerPhone: string;
+  bookerName?: string;
+  bookerPhone?: string;
 }
 
 export interface StaffAccountAuditDetails {
@@ -46,6 +49,7 @@ export interface AuditEntry {
   occurredAt: string;
   staff: StaffIdentity;
   bookingId: string | null;
+  blockId: string | null;
   subjectPlayerId: string | null;
   details: AuditEntryDetails;
 }
@@ -56,6 +60,7 @@ interface AuditEntryRow extends QueryResultRow {
   staff_display_name: string;
   action: AuditAction;
   booking_id: string | null;
+  block_id: string | null;
   subject_player_id: string | null;
   details: AuditEntryDetails;
   occurred_at: Date;
@@ -64,6 +69,7 @@ interface AuditEntryRow extends QueryResultRow {
 interface RecordedActionBase {
   staff: StaffIdentity;
   bookingId: string | null;
+  blockId: string | null;
   subjectPlayerId: string | null;
   occurredAt: Date;
 }
@@ -73,7 +79,11 @@ interface RecordedActionBase {
 export type RecordedAction = RecordedActionBase &
   (
     | {
-        action: "booking_created" | "booking_cancelled";
+        action:
+          | "booking_created"
+          | "booking_cancelled"
+          | "block_placed"
+          | "block_removed";
         details: BookingAuditDetails;
       }
     | {
@@ -88,15 +98,16 @@ export async function recordStaffAction(
 ): Promise<void> {
   await client.query(
     `insert into audit_log_entries
-       (id, staff_id, staff_display_name, action, booking_id,
+       (id, staff_id, staff_display_name, action, booking_id, block_id,
         subject_player_id, details, occurred_at)
-     values ($1, $2, $3, $4, $5, $6, $7, $8)`,
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
     [
       randomUUID(),
       entry.staff.id,
       entry.staff.displayName,
       entry.action,
       entry.bookingId,
+      entry.blockId,
       entry.subjectPlayerId,
       JSON.stringify(entry.details),
       entry.occurredAt,
@@ -108,7 +119,7 @@ export async function recordStaffAction(
 // only grows, so a read is capped.
 export async function readAuditLog(limit = 200): Promise<AuditEntry[]> {
   const result = await getPool().query<AuditEntryRow>(
-    `select id, staff_id, staff_display_name, action, booking_id,
+    `select id, staff_id, staff_display_name, action, booking_id, block_id,
             subject_player_id, details, occurred_at
        from audit_log_entries
       order by occurred_at desc, id desc
@@ -123,6 +134,7 @@ export async function readAuditLog(limit = 200): Promise<AuditEntry[]> {
     // rename cannot rewrite history.
     staff: { id: row.staff_id, displayName: row.staff_display_name },
     bookingId: row.booking_id,
+    blockId: row.block_id,
     subjectPlayerId: row.subject_player_id,
     details: row.details,
   }));

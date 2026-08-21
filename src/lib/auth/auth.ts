@@ -20,6 +20,9 @@ export type Player = {
   displayName: string;
   phone: string;
   strikeCount: number;
+  // When a Booking Ban is in force, the instant it runs out; null otherwise.
+  // Derived from the Strike records on every read, like the Strike count.
+  bookingBanEndsAt: string | null;
   role: PlayerRole;
 };
 
@@ -48,6 +51,7 @@ interface PlayerRow extends QueryResultRow {
   display_name: string;
   phone: string;
   strike_count: number;
+  booking_ban_ends_at: Date | null;
   is_staff: boolean;
 }
 
@@ -99,6 +103,7 @@ function playerFromRow(row: PlayerRow): Player {
     displayName: row.display_name,
     phone: row.phone,
     strikeCount: row.strike_count,
+    bookingBanEndsAt: row.booking_ban_ends_at?.toISOString() ?? null,
     role: row.is_staff ? "staff" : "player",
   };
 }
@@ -186,7 +191,7 @@ async function createOrTakeOverPlayer(
      values ($1, $2, $3, $4)
      on conflict (phone) do nothing
      returning id, display_name, phone, 0::integer as strike_count,
-               false as is_staff`,
+               null::timestamptz as booking_ban_ends_at, false as is_staff`,
     [randomUUID(), challenge.display_name, challenge.phone, now],
   );
 
@@ -195,6 +200,7 @@ async function createOrTakeOverPlayer(
     const existing = await client.query<ExistingPlayerRow>(
       `select players.id, players.display_name, players.phone,
               current_strike_count(players.id, $2) as strike_count,
+              booking_ban_ends_at(players.id, $2) as booking_ban_ends_at,
               ${IS_STAFF_SQL},
               exists (
                 select 1 from player_signups
@@ -217,11 +223,8 @@ async function createOrTakeOverPlayer(
       [challenge.display_name, row.id],
     );
     player = {
-      id: row.id,
+      ...playerFromRow(row),
       displayName: challenge.display_name,
-      phone: row.phone,
-      strikeCount: row.strike_count,
-      role: row.is_staff ? "staff" : "player",
     };
   }
 
@@ -240,6 +243,7 @@ async function findReturningPlayer(
   const result = await client.query<PlayerRow>(
     `select players.id, players.display_name, players.phone,
             current_strike_count(players.id, $2) as strike_count,
+            booking_ban_ends_at(players.id, $2) as booking_ban_ends_at,
             ${IS_STAFF_SQL}
        from players
        join player_signups on player_signups.player_id = players.id
@@ -335,6 +339,7 @@ export async function readPlayerSessionToken(sessionToken: string | undefined): 
   const result = await getPool().query<PlayerRow>(
     `select players.id, players.display_name, players.phone,
             current_strike_count(players.id, $3) as strike_count,
+            booking_ban_ends_at(players.id, $3) as booking_ban_ends_at,
             ${IS_STAFF_SQL}
        from player_sessions
        join players on players.id = player_sessions.player_id

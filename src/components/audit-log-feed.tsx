@@ -17,6 +17,8 @@ const VENUE_DATE_TIME = new Intl.DateTimeFormat("en-GB", {
 const ACTION_LABEL: Record<AuditEntry["action"], string> = {
   booking_created: "created a Booking",
   booking_cancelled: "cancelled a Booking",
+  block_placed: "placed a Block",
+  block_removed: "removed a Block",
   staff_account_created: "created a Staff account",
   staff_account_deactivated: "deactivated a Staff account",
 };
@@ -24,9 +26,10 @@ const ACTION_LABEL: Record<AuditEntry["action"], string> = {
 // What the action was about. An entry snapshots it, so the sentence reads the
 // same after the Booking or the Staff account is gone.
 function subjectOf(entry: AuditEntry): string {
-  if ("bookerName" in entry.details) {
+  if ("courtName" in entry.details) {
     const { bookerName, courtName, startsAt, endsAt } = entry.details;
-    return `for ${bookerName} — ${courtName}, ${VENUE_DATE_TIME.format(
+    const booker = bookerName ? `for ${bookerName} — ` : "";
+    return `${booker}${courtName}, ${VENUE_DATE_TIME.format(
       new Date(startsAt),
     )}–${VENUE_TIME.format(new Date(endsAt))}`;
   }
