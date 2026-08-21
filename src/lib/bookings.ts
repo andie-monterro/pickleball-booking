@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { PoolClient, QueryResultRow } from "pg";
 import { recordStaffAction, type StaffIdentity } from "@/lib/audit-log";
 import { normalizedDisplayName, normalizedPhone } from "@/lib/auth/auth";
+import { readBookingBanEndsAt } from "@/lib/booking-ban";
 import {
   coversInstant,
   readBookingHorizon,
@@ -107,11 +108,15 @@ export class BookingError extends Error {
       | "slot_not_bookable"
       | "slot_taken"
       | "outside_horizon"
+      | "booking_banned"
       | "booking_not_found"
       | "booking_started"
       | "cancellation_reclassified"
       | "player_not_found",
     readonly status: number,
+    // When the refusal is a Booking Ban, the instant it runs out, so the Player
+    // is told when they may book again.
+    readonly banEndsAt?: string,
   ) {
     super(code);
   }
@@ -307,6 +312,19 @@ async function refuseOutsideHorizon(
   }
 }
 
+// The ban gates self-service booking only: cancelling stays possible, existing
+// Bookings are kept, and Staff still book for a banned Player at the desk.
+async function refuseBannedBooker(
+  db: Queryable,
+  playerId: string,
+  now: Date,
+): Promise<void> {
+  const banEndsAt = await readBookingBanEndsAt(playerId, now, db);
+  if (banEndsAt) {
+    throw new BookingError("booking_banned", 403, banEndsAt.toISOString());
+  }
+}
+
 async function runInTransaction<T>(
   run: (client: PoolClient) => Promise<T>,
 ): Promise<T> {
@@ -378,6 +396,7 @@ export async function createBooking(playerId: string, rawInput: unknown): Promis
 
   try {
     return await runInTransaction(async (client) => {
+      await refuseBannedBooker(client, playerId, now);
       await refuseOutsideHorizon(client, playerId, input);
       return claimBooking(client, playerId, input, now);
     });

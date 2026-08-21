@@ -9,14 +9,19 @@ import {
 
 export const dynamic = "force-dynamic";
 
+function bookingErrorBody(error: BookingError): Record<string, unknown> {
+  if (error.code === "cancellation_reclassified") {
+    return { error: error.code, cancellationKind: "late_cancel" };
+  }
+  if (error.code === "booking_banned") {
+    return { error: error.code, banEndsAt: error.banEndsAt };
+  }
+  return { error: error.code };
+}
+
 function bookingErrorResponse(error: unknown): Response {
   if (error instanceof BookingError) {
-    return NextResponse.json(
-      error.code === "cancellation_reclassified"
-        ? { error: error.code, cancellationKind: "late_cancel" }
-        : { error: error.code },
-      { status: error.status },
-    );
+    return NextResponse.json(bookingErrorBody(error), { status: error.status });
   }
   if (error instanceof SyntaxError) {
     return NextResponse.json({ error: "invalid_request" }, { status: 400 });
