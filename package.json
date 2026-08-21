@@ -7,7 +7,7 @@
     "dev": "next dev",
     "dev:otp": "OTP_DEBUG=yes OTP_CONSOLE_SECRET=local-manual-testing next dev",
     "build": "next build",
-    "vercel-build": "npm run migrate:up && next build",
+    "vercel-build": "if [ \"$VERCEL_ENV\" = production ]; then npm run migrate:up; fi && next build",
     "start": "next start",
     "migrate:up": "node-pg-migrate up",
     "migrate:create": "node-pg-migrate create",
