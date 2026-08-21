@@ -32,6 +32,19 @@ npm run migrate:create -- <name>
 
 On Vercel, `vercel-build` runs migrations before `next build`.
 
+## The first Staff account
+
+Staff use the same phone sign-in as Players; the staff role is a grant on the
+Player record. The desk page is itself behind that role, so the first account is
+granted from the command line:
+
+```sh
+DATABASE_URL=... npm run staff:grant -- +84901234567 "Desk One"
+DATABASE_URL=... npm run staff:grant -- --revoke +84901234567
+```
+
+Then that person signs in at `/sign-in` and opens `/staff`.
+
 ## Testing
 
 Tests call route handlers over the HTTP seam (real `Request` in, real `Response` out — see `tests/harness/http.ts`) against a real test Postgres. Time-dependent code reads the injectable clock in `src/lib/clock.ts`; tests set it with `setClock(fixedClock(...))`.

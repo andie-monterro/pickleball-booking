@@ -20,6 +20,11 @@ export async function AppHeader() {
         <div className={styles.playerArea}>
           {player ? (
             <>
+              {player.role === "staff" && (
+                <a className={styles.staffDesk} href="/staff">
+                  Staff desk
+                </a>
+              )}
               <span
                 aria-label={`${player.strikeCount} current Strikes`}
                 className={styles.strikeCount}

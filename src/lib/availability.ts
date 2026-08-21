@@ -7,11 +7,14 @@ import {
 import { clock, formatVenueTime } from "@/lib/clock";
 import { getPool } from "@/lib/db";
 import {
+  claimKey,
+  formatHour,
+  readVenueGrid,
+  venueDayBounds,
+} from "@/lib/venue-grid";
+import {
   addDays,
   parseVenueDate,
-  venueDateFromInstant,
-  venueSlotStart,
-  weekdayForVenueDate,
   type VenueDate,
 } from "@/lib/venue-date";
 
@@ -57,20 +60,6 @@ export interface AvailabilityResponse {
   slots: AvailabilitySlot[];
 }
 
-interface VenueSettingsRow {
-  venue_time_zone: string;
-}
-
-interface OpeningHoursRow {
-  start_hour: number;
-  end_hour: number;
-}
-
-interface CourtRow {
-  id: number;
-  name: string;
-}
-
 interface ClaimRow {
   court_id: number;
   slot_starts_at: Date;
@@ -83,26 +72,10 @@ export async function readAvailability(
   dateParam?: string,
   playerId?: string,
 ): Promise<AvailabilityResponse> {
-  const pool = getPool();
-  const [settings, horizon] = await Promise.all([
-    readVenueSettings(),
-    readBookingHorizon(playerId),
-  ]);
+  const horizon = await readBookingHorizon(playerId);
   const now = clock.now();
   const date = normalizeDateParam(dateParam, horizon.firstDate);
-  const dayOfWeek = weekdayForVenueDate(date);
-
-  const [courtsResult, openingHoursResult] = await Promise.all([
-    pool.query<CourtRow>("select id, name from courts order by id"),
-    pool.query<OpeningHoursRow>(
-      "select start_hour, end_hour from opening_hours where day_of_week = $1 order by start_hour",
-      [dayOfWeek],
-    ),
-  ]);
-
-  const courts = courtsResult.rows.map((court) => ({ id: court.id, name: court.name }));
-  const hours = hoursFor(openingHoursResult.rows);
-  const slotStarts = hours.map((hour) => venueSlotStart(date, hour));
+  const { timeZone, courts, hours, slotStarts } = await readVenueGrid(date);
   const claims = await readClaims(date, slotStarts);
   const claimByCourtAndStart = new Map<string, ClaimKind>();
 
@@ -127,7 +100,7 @@ export async function readAvailability(
 
   return {
     date: date.key,
-    timeZone: settings.venue_time_zone,
+    timeZone,
     currentVenueTime: formatVenueTime(now),
     viewer: horizon.standing,
     horizons: {
@@ -141,24 +114,12 @@ export async function readAvailability(
   };
 }
 
-async function readVenueSettings(): Promise<VenueSettingsRow> {
-  const result = await getPool().query<VenueSettingsRow>(
-    "select venue_time_zone from venue_settings where id = 1",
-  );
-  const settings = result.rows[0];
-  if (!settings) {
-    throw new Error("Venue settings are not seeded");
-  }
-  return settings;
-}
-
 async function readClaims(date: VenueDate, slotStarts: Date[]): Promise<ClaimRow[]> {
   if (slotStarts.length === 0) {
     return [];
   }
 
-  const dayStart = venueSlotStart(date, 0);
-  const nextDayStart = venueSlotStart(addDays(date, 1), 0);
+  const [dayStart, nextDayStart] = venueDayBounds(date);
   const result = await getPool().query<ClaimRow>(
     `select court_id, slot_starts_at, source_kind
      from slot_claims
@@ -194,16 +155,6 @@ function dayStrip(horizon: BookingHorizon): AvailabilityDay[] {
   });
 }
 
-function hoursFor(rows: OpeningHoursRow[]): number[] {
-  const hours: number[] = [];
-  for (const row of rows) {
-    for (let hour = row.start_hour; hour < row.end_hour; hour += 1) {
-      hours.push(hour);
-    }
-  }
-  return hours;
-}
-
 function slotStatus(insideHorizon: boolean, claim: ClaimKind | undefined): SlotStatus {
   if (!insideHorizon) {
     return "outside_horizon";
@@ -230,10 +181,3 @@ function slotLabel(status: SlotStatus, start: Date, now: Date): SlotLabel {
   return "Outside horizon";
 }
 
-function claimKey(courtId: number, start: Date): string {
-  return `${courtId}|${start.toISOString()}`;
-}
-
-function formatHour(hour: number): string {
-  return `${hour.toString().padStart(2, "0")}:00`;
-}
