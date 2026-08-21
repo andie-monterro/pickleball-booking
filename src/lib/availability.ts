@@ -6,6 +6,7 @@ import {
 } from "@/lib/booking-horizon";
 import { clock, formatVenueTime } from "@/lib/clock";
 import { getPool } from "@/lib/db";
+import type { ClaimKind } from "@/lib/slot-claims";
 import {
   claimKey,
   formatHour,
@@ -18,7 +19,6 @@ import {
   type VenueDate,
 } from "@/lib/venue-date";
 
-type ClaimKind = "booking" | "block";
 export type SlotStatus = "free" | "taken" | "blocked" | "outside_horizon";
 export type SlotLabel = "Free" | "Taken" | "Blocked" | "Past" | "Outside horizon";
 
