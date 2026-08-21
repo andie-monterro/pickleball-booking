@@ -1,8 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { PoolClient, QueryResultRow } from "pg";
+import { recordStaffAction } from "@/lib/audit-log";
+import { normalizedDisplayName, normalizedPhone, type Player } from "@/lib/auth/auth";
 import {
   coversInstant,
   readBookingHorizon,
+  type Queryable,
 } from "@/lib/booking-horizon";
 import { clock } from "@/lib/clock";
 import { getPool } from "@/lib/db";
@@ -33,6 +36,25 @@ type CancelBookingInput = {
   confirmLateCancel: boolean;
 };
 
+// Whom a desk Booking is for: an existing Player, or a light Player record
+// (name + phone, unverified) created on the spot.
+type BookerNaming =
+  | { playerId: string }
+  | { newPlayer: { displayName: string; phone: string } };
+
+// The Booker of a staff-created Booking, echoed back so the desk can read the
+// name it just booked for.
+export type Booker = {
+  id: string;
+  displayName: string;
+  phone: string;
+};
+
+export type DeskBooking = {
+  booking: Booking;
+  booker: Booker;
+};
+
 export type Cancellation = {
   bookingId: string;
   kind: CancellationKind;
@@ -61,6 +83,20 @@ interface StrikeCountRow extends QueryResultRow {
   strike_count: number;
 }
 
+interface BookerRow extends QueryResultRow {
+  id: string;
+  display_name: string;
+  phone: string;
+}
+
+interface CancellableAnyBookingRow extends CancellableBookingRow {
+  booker_id: string;
+  booker_name: string;
+  booker_phone: string;
+  court_name: string;
+  duration_hours: number;
+}
+
 type PostgresError = Error & { code?: string };
 
 export class BookingError extends Error {
@@ -73,7 +109,8 @@ export class BookingError extends Error {
       | "outside_horizon"
       | "booking_not_found"
       | "booking_started"
-      | "cancellation_reclassified",
+      | "cancellation_reclassified"
+      | "player_not_found",
     readonly status: number,
   ) {
     super(code);
@@ -124,6 +161,69 @@ function parseCancelInput(input: unknown): CancelBookingInput {
     throw new BookingError("invalid_request", 400);
   }
   return { bookingId, confirmLateCancel: confirmLateCancel === true };
+}
+
+function parseBookerNaming(input: unknown): BookerNaming {
+  const record = input as Record<string, unknown>;
+  if (record.playerId !== undefined) {
+    if (typeof record.playerId !== "string" || record.playerId.length === 0) {
+      throw new BookingError("invalid_request", 400);
+    }
+    return { playerId: record.playerId };
+  }
+  const newPlayer = record.newPlayer;
+  if (!newPlayer || typeof newPlayer !== "object" || Array.isArray(newPlayer)) {
+    throw new BookingError("invalid_request", 400);
+  }
+  const fields = newPlayer as Record<string, unknown>;
+  return {
+    newPlayer: {
+      displayName: normalizedDisplayName(fields.displayName),
+      phone: normalizedPhone(fields.phone),
+    },
+  };
+}
+
+// Every Booking names a real Player. A light record holds only a name and a
+// phone and stays unverified, so a later self-signup with that phone takes it
+// over. A phone already on file is the same person (a shared phone means a
+// shared Player record), so the desk reuses that record instead of duplicating.
+async function resolveBooker(
+  client: PoolClient,
+  naming: BookerNaming,
+  now: Date,
+): Promise<Booker> {
+  if ("playerId" in naming) {
+    const result = await client.query<BookerRow>(
+      "select id, display_name, phone from players where id = $1",
+      [naming.playerId],
+    );
+    const row = result.rows[0];
+    if (!row) {
+      throw new BookingError("player_not_found", 404);
+    }
+    return { id: row.id, displayName: row.display_name, phone: row.phone };
+  }
+
+  const inserted = await client.query<BookerRow>(
+    `insert into players (id, display_name, phone, created_at)
+     values ($1, $2, $3, $4)
+     on conflict (phone) do nothing
+     returning id, display_name, phone`,
+    [randomUUID(), naming.newPlayer.displayName, naming.newPlayer.phone, now],
+  );
+  const row =
+    inserted.rows[0] ??
+    (
+      await client.query<BookerRow>(
+        "select id, display_name, phone from players where phone = $1",
+        [naming.newPlayer.phone],
+      )
+    ).rows[0];
+  if (!row) {
+    throw new BookingError("player_not_found", 404);
+  }
+  return { id: row.id, displayName: row.display_name, phone: row.phone };
 }
 
 function classifyCancellation(
@@ -190,8 +290,12 @@ async function readBookableCourt(
 
 // Whole-day horizon: every venue day the Booking touches must be inside the
 // Booker's horizon, so a Booking can never straddle the boundary.
-async function refuseOutsideHorizon(playerId: string, input: CreateBookingInput): Promise<void> {
-  const horizon = await readBookingHorizon(playerId);
+async function refuseOutsideHorizon(
+  db: Queryable,
+  playerId: string,
+  input: CreateBookingInput,
+): Promise<void> {
+  const horizon = await readBookingHorizon(playerId, db);
   for (let slotNumber = 0; slotNumber < input.durationHours; slotNumber += 1) {
     const slotStart = new Date(input.startsAt.getTime() + slotNumber * 60 * 60 * 1000);
     if (!coversInstant(horizon, slotStart)) {
@@ -200,48 +304,124 @@ async function refuseOutsideHorizon(playerId: string, input: CreateBookingInput)
   }
 }
 
-export async function createBooking(playerId: string, rawInput: unknown): Promise<Booking> {
-  const input = parseInput(rawInput);
-  const now = clock.now();
-  if (input.startsAt.getTime() < now.getTime()) {
-    throw new BookingError("slot_in_past", 400);
-  }
-  await refuseOutsideHorizon(playerId, input);
-
+async function runInTransaction<T>(
+  run: (client: PoolClient) => Promise<T>,
+): Promise<T> {
   const client = await getPool().connect();
   try {
     await client.query("begin");
-    const court = await readBookableCourt(client, input);
-    const id = randomUUID();
-    await client.query(
-      `insert into bookings (id, booker_id, court_id, starts_at, duration_hours, created_at)
-       values ($1, $2, $3, $4, $5, $6)`,
-      [id, playerId, input.courtId, input.startsAt, input.durationHours, now],
-    );
-    await client.query(
-      `insert into slot_claims (court_id, slot_starts_at, source_kind, source_id)
-       select $1, $2::timestamptz + slot.slot_number * interval '1 hour', 'booking', $3
-         from generate_series(0, $4::integer - 1) as slot(slot_number)`,
-      [input.courtId, input.startsAt, id, input.durationHours],
-    );
+    const result = await run(client);
     await client.query("commit");
-    return {
-      id,
-      courtId: input.courtId,
-      courtName: court.name,
-      startsAt: input.startsAt.toISOString(),
-      endsAt: new Date(input.startsAt.getTime() + input.durationHours * 60 * 60 * 1000).toISOString(),
-      createdAt: now.toISOString(),
-      cancellationKind: "penalty_free",
-    };
+    return result;
   } catch (error) {
     await client.query("rollback");
-    if ((error as PostgresError).code === "23505") {
-      throw new BookingError("slot_taken", 409);
-    }
     throw error;
   } finally {
     client.release();
+  }
+}
+
+// No-double-booking is a database invariant: the loser of a race on a Slot sees
+// the uniqueness violation and gets a clean "slot taken".
+function rethrowAsSlotTaken(error: unknown): never {
+  if ((error as PostgresError).code === "23505") {
+    throw new BookingError("slot_taken", 409);
+  }
+  throw error;
+}
+
+async function claimBooking(
+  client: PoolClient,
+  bookerId: string,
+  input: CreateBookingInput,
+  now: Date,
+): Promise<Booking> {
+  const court = await readBookableCourt(client, input);
+  const id = randomUUID();
+  await client.query(
+    `insert into bookings (id, booker_id, court_id, starts_at, duration_hours, created_at)
+     values ($1, $2, $3, $4, $5, $6)`,
+    [id, bookerId, input.courtId, input.startsAt, input.durationHours, now],
+  );
+  await client.query(
+    `insert into slot_claims (court_id, slot_starts_at, source_kind, source_id)
+     select $1, $2::timestamptz + slot.slot_number * interval '1 hour', 'booking', $3
+       from generate_series(0, $4::integer - 1) as slot(slot_number)`,
+    [input.courtId, input.startsAt, id, input.durationHours],
+  );
+  return {
+    id,
+    courtId: input.courtId,
+    courtName: court.name,
+    startsAt: input.startsAt.toISOString(),
+    endsAt: new Date(
+      input.startsAt.getTime() + input.durationHours * 60 * 60 * 1000,
+    ).toISOString(),
+    createdAt: now.toISOString(),
+    cancellationKind: "penalty_free",
+  };
+}
+
+function refuseSlotInPast(input: CreateBookingInput, now: Date): void {
+  if (input.startsAt.getTime() < now.getTime()) {
+    throw new BookingError("slot_in_past", 400);
+  }
+}
+
+export async function createBooking(playerId: string, rawInput: unknown): Promise<Booking> {
+  const input = parseInput(rawInput);
+  const now = clock.now();
+  refuseSlotInPast(input, now);
+
+  try {
+    return await runInTransaction(async (client) => {
+      await refuseOutsideHorizon(client, playerId, input);
+      return claimBooking(client, playerId, input, now);
+    });
+  } catch (error) {
+    rethrowAsSlotTaken(error);
+  }
+}
+
+function auditDetails(booking: Booking, booker: Booker) {
+  return {
+    courtName: booking.courtName,
+    startsAt: booking.startsAt,
+    endsAt: booking.endsAt,
+    bookerName: booker.displayName,
+    bookerPhone: booker.phone,
+  };
+}
+
+// A desk Booking is an ordinary Booking held by the named Player: same Slot
+// rules, that Player's own Booking Horizon. Staff attribution lives in the
+// Audit Log, written in the same transaction as the Booking.
+export async function createBookingForPlayer(
+  staff: Player,
+  rawInput: unknown,
+): Promise<DeskBooking> {
+  const input = parseInput(rawInput);
+  const naming = parseBookerNaming(rawInput);
+  const now = clock.now();
+  refuseSlotInPast(input, now);
+
+  try {
+    return await runInTransaction(async (client) => {
+      const booker = await resolveBooker(client, naming, now);
+      await refuseOutsideHorizon(client, booker.id, input);
+      const booking = await claimBooking(client, booker.id, input, now);
+      await recordStaffAction(client, {
+        staff: { id: staff.id, displayName: staff.displayName },
+        action: "booking_created",
+        bookingId: booking.id,
+        subjectPlayerId: booker.id,
+        details: auditDetails(booking, booker),
+        occurredAt: now,
+      });
+      return { booking, booker };
+    });
+  } catch (error) {
+    rethrowAsSlotTaken(error);
   }
 }
 

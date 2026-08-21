@@ -2,12 +2,17 @@
 // Horizon lengths are venue settings data, read here at policy-evaluation time
 // so changing them in the database changes enforcement with no code change.
 
-import type { QueryResultRow } from "pg";
+import type { Pool, PoolClient, QueryResultRow } from "pg";
 import { clock } from "@/lib/clock";
 import { getPool } from "@/lib/db";
 import { addDays, venueDateFromInstant, type VenueDate } from "@/lib/venue-date";
 
 export type PlayerStanding = "casual" | "member";
+
+// Either the pool or one transaction's client. A staff Booking creates its
+// light Player record and checks that Player's horizon in one transaction, so
+// the check has to run on the connection that can see the new row.
+export type Queryable = Pool | PoolClient;
 
 export interface BookingHorizon {
   standing: PlayerStanding;
@@ -28,8 +33,11 @@ interface HorizonRow extends QueryResultRow {
 // Standing is judged now, from the staff-set "member until" date: a Player is a
 // Member through the whole of that venue date, and a casual player after it.
 // Pass no playerId for a viewer who is not signed in.
-export async function readBookingHorizon(playerId?: string): Promise<BookingHorizon> {
-  const result = await getPool().query<HorizonRow>(
+export async function readBookingHorizon(
+  playerId?: string,
+  db: Queryable = getPool(),
+): Promise<BookingHorizon> {
+  const result = await db.query<HorizonRow>(
     `select venue_settings.casual_horizon_days,
             venue_settings.member_horizon_days,
             to_char(players.member_until, 'YYYY-MM-DD') as member_until
