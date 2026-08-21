@@ -2,7 +2,6 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import type { AuditEntry } from "@/lib/audit-log";
 import { VENUE_TIME_ZONE } from "@/lib/clock";
 import type { DeskPlayer } from "@/lib/staff/players";
 import type {
@@ -24,11 +23,6 @@ const VENUE_DATE_TIME = new Intl.DateTimeFormat("en-GB", {
   timeStyle: "short",
 });
 
-const ACTION_LABEL: Record<AuditEntry["action"], string> = {
-  booking_created: "created a Booking",
-  booking_cancelled: "cancelled a Booking",
-};
-
 const NEW_PLAYER = "new";
 
 const CREATE_ERROR: Record<string, string> = {
@@ -45,16 +39,10 @@ const CREATE_ERROR: Record<string, string> = {
 type StaffDeskProps = {
   schedule: StaffSchedule;
   players: DeskPlayer[];
-  auditEntries: AuditEntry[];
   staffName: string;
 };
 
-export function StaffDesk({
-  schedule,
-  players,
-  auditEntries,
-  staffName,
-}: StaffDeskProps) {
+export function StaffDesk({ schedule, players, staffName }: StaffDeskProps) {
   const router = useRouter();
   const [selectedSlots, setSelectedSlots] = useState<StaffScheduleSlot[]>([]);
   const [bookerChoice, setBookerChoice] = useState(players[0]?.id ?? NEW_PLAYER);
@@ -169,7 +157,7 @@ export function StaffDesk({
       <section className={styles.intro}>
         <h2>Staff desk</h2>
         <p>
-          Signed in as {staffName}. Every Booking you create or cancel here is
+          Signed in as {staffName}. Everything you create or cancel here is
           recorded in the Audit Log under your name.
         </p>
       </section>
@@ -387,30 +375,6 @@ export function StaffDesk({
           </div>
         </aside>
       )}
-
-      <section aria-labelledby="audit-log-heading" className={styles.auditLog}>
-        <h3 id="audit-log-heading">Audit Log</h3>
-        {auditEntries.length === 0 ? (
-          <p>No staff actions yet.</p>
-        ) : (
-          <ul>
-            {auditEntries.map((entry) => (
-              <li key={entry.id}>
-                <span className={styles.auditWhen}>
-                  {VENUE_DATE_TIME.format(new Date(entry.occurredAt))}
-                </span>
-                <span>
-                  <strong>{entry.staff.displayName}</strong>{" "}
-                  {ACTION_LABEL[entry.action]} for {entry.details.bookerName} —{" "}
-                  {entry.details.courtName},{" "}
-                  {VENUE_DATE_TIME.format(new Date(entry.details.startsAt))}–
-                  {VENUE_TIME.format(new Date(entry.details.endsAt))}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
     </>
   );
 }

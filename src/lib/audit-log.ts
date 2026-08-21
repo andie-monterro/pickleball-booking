@@ -7,7 +7,11 @@ import { randomUUID } from "node:crypto";
 import type { PoolClient, QueryResultRow } from "pg";
 import { getPool } from "@/lib/db";
 
-export type AuditAction = "booking_created" | "booking_cancelled";
+export type AuditAction =
+  | "booking_created"
+  | "booking_cancelled"
+  | "staff_account_created"
+  | "staff_account_deactivated";
 
 // Who acted. Only the id and the name are needed, so any Staff session value
 // fits, and the log keeps the name as it read at the time.
@@ -16,13 +20,25 @@ export interface StaffIdentity {
   displayName: string;
 }
 
-export interface AuditEntryDetails {
+// An entry stays readable on its own, so it snapshots what the action was
+// about. What that is depends on the action, so details is a union: a Booking's
+// court, time and Booker, or the name and phone of the Staff account granted or
+// revoked. Readers tell them apart by the fields, not by the action, so a
+// details shape can never be read as the wrong one.
+export interface BookingAuditDetails {
   courtName: string;
   startsAt: string;
   endsAt: string;
   bookerName: string;
   bookerPhone: string;
 }
+
+export interface StaffAccountAuditDetails {
+  accountName: string;
+  accountPhone: string;
+}
+
+export type AuditEntryDetails = BookingAuditDetails | StaffAccountAuditDetails;
 
 export interface AuditEntry {
   id: string;

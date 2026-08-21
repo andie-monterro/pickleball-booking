@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { AuditLogFeed } from "@/components/audit-log-feed";
 import { StaffDesk } from "@/components/staff-desk";
 import { readAuditLog } from "@/lib/audit-log";
 import { SESSION_COOKIE_NAME, readPlayerSessionToken } from "@/lib/auth/auth";
@@ -50,11 +51,11 @@ export default async function StaffPage({ searchParams }: StaffPageProps) {
   return (
     <main className={styles.main}>
       <StaffDesk
-        auditEntries={auditEntries}
         players={players}
         schedule={schedule}
         staffName={staff.displayName}
       />
+      <AuditLogFeed entries={auditEntries} />
     </main>
   );
 }
