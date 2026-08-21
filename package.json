@@ -13,7 +13,9 @@
     "migrate:create": "node-pg-migrate create",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "sandcastle": "npx tsx .sandcastle/main.ts",
+    "sandcastle:verify": "npx tsx .sandcastle/verify.ts"
   },
   "dependencies": {
     "next": "^16.3.1",
@@ -22,6 +24,7 @@
     "react-dom": "^19.2.8"
   },
   "devDependencies": {
+    "@ai-hero/sandcastle": "^0.12.0",
     "@testcontainers/postgresql": "^12.1.0",
     "@types/node": "^26.2.0",
     "@types/pg": "^8.23.1",
@@ -29,6 +32,7 @@
     "@types/react-dom": "^19.2.4",
     "node-pg-migrate": "^9.0.0",
     "typescript": "^7.0.2",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.11",
+    "zod": "^4.4.3"
   }
 }

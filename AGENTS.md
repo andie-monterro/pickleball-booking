@@ -28,6 +28,10 @@ Default five, names as-is. See `docs/agents/triage-labels.md`.
 
 Single-context: root `CONTEXT.md` + `docs/adr/`. See `docs/agents/domain.md`.
 
+### Parallel AFK loop
+
+Sandcastle — several tickets at once, each in its own Docker sandbox, ending in one pull request per ticket. Run it with `npm run sandcastle`. It never merges and never closes a ticket. See `docs/agents/sandcastle.md`.
+
 <!-- BEGIN:nextjs-agent-rules -->
 
 # This is NOT the Next.js you know
