@@ -13,12 +13,12 @@ import { randomUUID } from "node:crypto";
 import type { PoolClient, QueryResultRow } from "pg";
 import { recordStaffAction, type StaffIdentity } from "@/lib/audit-log";
 import { clock } from "@/lib/clock";
+import { runInTransaction } from "@/lib/db";
 import {
   claimSlots,
   isSlotTaken,
   readClaimableCourt,
   releaseSlots,
-  runInTransaction,
   slotRangeEnd,
   type ClaimRange,
 } from "@/lib/slot-claims";

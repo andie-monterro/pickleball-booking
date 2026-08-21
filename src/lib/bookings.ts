@@ -5,13 +5,12 @@ import { normalizedDisplayName, normalizedPhone } from "@/lib/auth/auth";
 import { readBookingBanEndsAt } from "@/lib/booking-ban";
 import { coversInstant, readBookingHorizon } from "@/lib/booking-horizon";
 import { clock } from "@/lib/clock";
-import { getPool, type Queryable } from "@/lib/db";
+import { getPool, runInTransaction, type Queryable } from "@/lib/db";
 import {
   claimSlots,
   isSlotTaken,
   readClaimableCourt,
   releaseSlots,
-  runInTransaction,
   slotRangeEnd,
   type ClaimRange,
 } from "@/lib/slot-claims";

@@ -11,7 +11,9 @@ export type AuditAction =
   | "booking_created"
   | "booking_cancelled"
   | "block_placed"
-  | "block_removed";
+  | "block_removed"
+  | "staff_account_created"
+  | "staff_account_deactivated";
 
 // Who acted. Only the id and the name are needed, so any Staff session value
 // fits, and the log keeps the name as it read at the time.
@@ -20,16 +22,26 @@ export interface StaffIdentity {
   displayName: string;
 }
 
-// A readable snapshot of what the action touched: enough to understand the
-// entry on its own, years later, whether or not the records it describes still
-// exist. A Block has no Booker, so those two fields are absent on its entries.
-export interface AuditEntryDetails {
+// An entry stays readable on its own, years later, whether or not the records it
+// describes still exist. What it snapshots depends on the action, so details is
+// a union: the Slots an action took — a Booking or a Block, and a Block has no
+// Booker — or the name and phone of the Staff account granted or revoked.
+// Readers tell them apart by the fields, not by the action, so a details shape
+// can never be read as the wrong one.
+export interface BookingAuditDetails {
   courtName: string;
   startsAt: string;
   endsAt: string;
   bookerName?: string;
   bookerPhone?: string;
 }
+
+export interface StaffAccountAuditDetails {
+  accountName: string;
+  accountPhone: string;
+}
+
+export type AuditEntryDetails = BookingAuditDetails | StaffAccountAuditDetails;
 
 export interface AuditEntry {
   id: string;
@@ -54,15 +66,31 @@ interface AuditEntryRow extends QueryResultRow {
   occurred_at: Date;
 }
 
-export interface RecordedAction {
+interface RecordedActionBase {
   staff: StaffIdentity;
-  action: AuditAction;
   bookingId: string | null;
   blockId: string | null;
   subjectPlayerId: string | null;
-  details: AuditEntryDetails;
   occurredAt: Date;
 }
+
+// What a staff mutation may write: the action fixes which details go with it, so
+// a Booking action cannot be logged with a Staff account's details.
+export type RecordedAction = RecordedActionBase &
+  (
+    | {
+        action:
+          | "booking_created"
+          | "booking_cancelled"
+          | "block_placed"
+          | "block_removed";
+        details: BookingAuditDetails;
+      }
+    | {
+        action: "staff_account_created" | "staff_account_deactivated";
+        details: StaffAccountAuditDetails;
+      }
+  );
 
 export async function recordStaffAction(
   client: PoolClient,

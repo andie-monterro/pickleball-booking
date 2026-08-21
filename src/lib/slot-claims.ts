@@ -8,7 +8,6 @@
 // which of their own errors a missing Court or a taken Slot means.
 
 import type { PoolClient, QueryResultRow } from "pg";
-import { getPool } from "@/lib/db";
 
 const UNIQUE_VIOLATION = "23505";
 
@@ -104,21 +103,4 @@ export function isSlotTaken(error: unknown): boolean {
 
 export function slotRangeEnd(range: ClaimRange): Date {
   return new Date(range.startsAt.getTime() + range.slotCount * 60 * 60 * 1000);
-}
-
-export async function runInTransaction<T>(
-  run: (client: PoolClient) => Promise<T>,
-): Promise<T> {
-  const client = await getPool().connect();
-  try {
-    await client.query("begin");
-    const result = await run(client);
-    await client.query("commit");
-    return result;
-  } catch (error) {
-    await client.query("rollback");
-    throw error;
-  } finally {
-    client.release();
-  }
 }

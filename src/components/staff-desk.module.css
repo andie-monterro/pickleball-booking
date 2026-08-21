@@ -218,33 +218,6 @@
   opacity: 0.6;
 }
 
-.auditLog {
-  border-top: 1px solid #eaecf0;
-  margin-top: 2rem;
-  padding-top: 1rem;
-}
-
-.auditLog ul {
-  display: grid;
-  gap: 0.5rem;
-  list-style: none;
-  padding: 0;
-}
-
-.auditLog li {
-  background: #f9fafb;
-  border: 1px solid #eaecf0;
-  border-radius: 0.75rem;
-  display: grid;
-  gap: 0.2rem;
-  padding: 0.75rem 1rem;
-}
-
-.auditWhen {
-  color: #475467;
-  font-size: 0.8rem;
-}
-
 @media (max-width: 40rem) {
   .panel {
     align-items: stretch;

@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 // Bootstrap for the staff role.
 //
-// The first Staff account cannot be created in the app: managing Staff accounts
-// is a later slice, and the desk page is itself behind the staff role. This
-// script grants the role to a phone number. It creates the Player record if the
-// phone is new, and marks it as signed up so the person can sign in with a
-// one-time code straight away.
+// Staff create and deactivate Staff accounts in the app (/staff), so this script
+// is only for the first account: the desk page is itself behind the staff role,
+// so the first grant has to come from outside. It also stays the way back in if
+// every account is somehow lost. It grants the role to a phone number, creates
+// the Player record if the phone is new, and marks it as signed up so the person
+// can sign in with a one-time code straight away.
 //
 // Usage:
 //   DATABASE_URL=... node scripts/grant-staff.mjs +84901234567 "Desk One"

@@ -114,6 +114,9 @@ describe("app shell", () => {
       expect(deskResponse.status).toBe(200);
       expect(desk).toContain('aria-label="Staff schedule for');
       expect(desk).toContain("Audit Log");
+      // Staff manage Staff accounts from the desk itself.
+      expect(desk).toContain("Staff accounts");
+      expect(desk).toContain("Onboard a front-desk person");
 
       // A Block reaches the desk as something Staff can remove. This test runs
       // on the real clock, so it picks 09:00 venue time on the current venue
@@ -145,6 +148,7 @@ describe("app shell", () => {
       const playerPage = await playerResponse.text();
       expect(playerPage).toContain("This page is for Staff.");
       expect(playerPage).not.toContain('aria-label="Staff schedule for');
+      expect(playerPage).not.toContain("Onboard a front-desk person");
     } finally {
       await pool.query("delete from slot_claims where source_kind = 'block'");
       await pool.query("delete from blocks");
