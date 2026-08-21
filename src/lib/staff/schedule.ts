@@ -11,7 +11,7 @@ import type { QueryResultRow } from "pg";
 import { readBookingHorizon } from "@/lib/booking-horizon";
 import { clock } from "@/lib/clock";
 import { getPool } from "@/lib/db";
-import type { ClaimKind } from "@/lib/slot-claims";
+import { slotRangeEnd, type ClaimKind } from "@/lib/slot-claims";
 import {
   claimKey,
   formatHour,
@@ -129,10 +129,11 @@ function slotFor(
     slot.block = {
       id: claim.block_id,
       startsAt: claim.block_starts_at.toISOString(),
-      endsAt: new Date(
-        claim.block_starts_at.getTime() +
-          claim.block_slot_count * 60 * 60 * 1000,
-      ).toISOString(),
+      endsAt: slotRangeEnd({
+        courtId: claim.court_id,
+        startsAt: claim.block_starts_at,
+        slotCount: claim.block_slot_count,
+      }).toISOString(),
     };
   }
   if (

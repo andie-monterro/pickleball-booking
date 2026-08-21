@@ -94,8 +94,12 @@ export function StaffDesk({
     setCreateError(undefined);
     setBlockError(undefined);
     setSelectedSlots((current) => {
+      const alreadySelected = current.some(
+        (candidate) => candidate.courtId === slot.courtId && candidate.start === slot.start,
+      );
       const sameCourt = current.length > 0 && current[0].courtId === slot.courtId;
       const adjacent =
+        !alreadySelected &&
         sameCourt &&
         current.some(
           (candidate) =>
