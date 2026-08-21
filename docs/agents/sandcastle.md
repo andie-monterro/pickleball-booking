@@ -46,7 +46,11 @@ node scripts/linear.mjs label AND-25 --add ready-for-human --remove ready-for-ag
 node scripts/linear.mjs state AND-25 "In Progress"
 ```
 
-The script works on the host too, which is the fastest way to check what a run will pick up.
+From the host, `npm run linear -- <command>` runs the same script with `.sandcastle/.env` loaded, which is the fastest way to check what a run will pick up:
+
+```bash
+npm run linear -- list
+```
 
 ## The test database
 
