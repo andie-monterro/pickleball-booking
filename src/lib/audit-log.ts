@@ -61,14 +61,26 @@ interface AuditEntryRow extends QueryResultRow {
   occurred_at: Date;
 }
 
-export interface RecordedAction {
+interface RecordedActionBase {
   staff: StaffIdentity;
-  action: AuditAction;
   bookingId: string | null;
   subjectPlayerId: string | null;
-  details: AuditEntryDetails;
   occurredAt: Date;
 }
+
+// What a staff mutation may write: the action fixes which details go with it, so
+// a Booking action cannot be logged with a Staff account's details.
+export type RecordedAction = RecordedActionBase &
+  (
+    | {
+        action: "booking_created" | "booking_cancelled";
+        details: BookingAuditDetails;
+      }
+    | {
+        action: "staff_account_created" | "staff_account_deactivated";
+        details: StaffAccountAuditDetails;
+      }
+  );
 
 export async function recordStaffAction(
   client: PoolClient,
