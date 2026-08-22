@@ -123,6 +123,22 @@ const STRIKE_SOURCE = `from strikes
        join courts on courts.id = bookings.court_id
        join players on players.id = strikes.player_id`;
 
+// One Strike with the Booking behind it, locked: the caller is about to change
+// it, so two Staff cannot waive the same Strike at once.
+async function lockStrikeById(
+  client: PoolClient,
+  strikeId: string,
+): Promise<StrikeRow | undefined> {
+  const result = await client.query<StrikeRow>(
+    `select ${STRIKE_COLUMNS}
+       ${STRIKE_SOURCE}
+      where strikes.id = $1
+      for update of strikes`,
+    [strikeId],
+  );
+  return result.rows[0];
+}
+
 function endOf(startsAt: Date, durationHours: number): Date {
   return new Date(startsAt.getTime() + durationHours * HOUR_MS);
 }
@@ -141,15 +157,8 @@ function strikeFromRow(row: StrikeRow): Strike {
   };
 }
 
-function bookingIdOf(input: unknown): string {
-  return requiredId(input, "bookingId");
-}
-
-function strikeIdOf(input: unknown): string {
-  return requiredId(input, "strikeId");
-}
-
-function requiredId(input: unknown, field: string): string {
+// Both endpoints take one id and nothing else, so one guard serves both.
+function requiredId(input: unknown, field: "bookingId" | "strikeId"): string {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     throw new StrikeError("invalid_request", 400);
   }
@@ -203,7 +212,7 @@ export async function markNoShow(
   staff: StaffIdentity,
   rawInput: unknown,
 ): Promise<{ strike: Strike } & StrikeOutcome> {
-  const bookingId = bookingIdOf(rawInput);
+  const bookingId = requiredId(rawInput, "bookingId");
   const now = clock.now();
 
   return runInTransaction(async (client) => {
@@ -244,11 +253,13 @@ export async function markNoShow(
     });
 
     return {
+      // Built from the values it was just created with: the row is in this
+      // transaction, so there is nothing to read back.
       strike: {
         id,
         playerId: player.id,
         bookingId,
-        reason: "no_show" as const,
+        reason: "no_show",
         earnedAt: now.toISOString(),
         waivedAt: null,
         courtName: booking.court_name,
@@ -305,7 +316,7 @@ export async function undoNoShow(
   staff: StaffIdentity,
   rawInput: unknown,
 ): Promise<{ bookingId: string } & StrikeOutcome> {
-  const bookingId = bookingIdOf(rawInput);
+  const bookingId = requiredId(rawInput, "bookingId");
   const now = clock.now();
 
   return runInTransaction(async (client) => {
@@ -354,18 +365,11 @@ export async function waiveStrike(
   staff: StaffIdentity,
   rawInput: unknown,
 ): Promise<{ strike: Strike } & StrikeOutcome> {
-  const strikeId = strikeIdOf(rawInput);
+  const strikeId = requiredId(rawInput, "strikeId");
   const now = clock.now();
 
   return runInTransaction(async (client) => {
-    const result = await client.query<StrikeRow>(
-      `select ${STRIKE_COLUMNS}
-         ${STRIKE_SOURCE}
-        where strikes.id = $1
-        for update of strikes`,
-      [strikeId],
-    );
-    const row = result.rows[0];
+    const row = await lockStrikeById(client, strikeId);
     if (!row) {
       throw new StrikeError("strike_not_found", 404);
     }
