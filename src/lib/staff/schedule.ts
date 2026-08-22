@@ -36,6 +36,13 @@ export interface ScheduledBooking {
   bookerPhone: string;
   startsAt: string;
   endsAt: string;
+  // Whether the Booking has begun, so the desk only offers a No-show mark on a
+  // Booking there is something to judge about. "Any time after it starts"
+  // includes the start instant itself.
+  started: boolean;
+  // Whether Staff already marked it as a No-show, so the desk offers the undo
+  // instead of a second mark.
+  noShow: boolean;
 }
 
 export interface StaffScheduleSlot {
@@ -74,6 +81,7 @@ interface ScheduleClaimRow extends QueryResultRow {
   block_id: string | null;
   block_starts_at: Date | null;
   block_slot_count: number | null;
+  no_show: boolean;
 }
 
 export async function readStaffSchedule(dateParam?: string): Promise<StaffSchedule> {
@@ -82,6 +90,7 @@ export async function readStaffSchedule(dateParam?: string): Promise<StaffSchedu
     dateParam === undefined || dateParam === ""
       ? venueDateFromInstant(clock.now())
       : parseVenueDate(dateParam);
+  const now = clock.now();
   const { timeZone, courts, hours, slotStarts } = await readVenueGrid(date);
   const claims = slotStarts.length === 0 ? [] : await readScheduleClaims(date);
   const claimByCourtAndStart = new Map(
@@ -99,7 +108,13 @@ export async function readStaffSchedule(dateParam?: string): Promise<StaffSchedu
     hours: hours.map(formatHour),
     slots: courts.flatMap((court) =>
       slotStarts.map((start, index) =>
-        slotFor(court, hours[index], start, claimByCourtAndStart.get(claimKey(court.id, start))),
+        slotFor(
+          court,
+          hours[index],
+          start,
+          claimByCourtAndStart.get(claimKey(court.id, start)),
+          now,
+        ),
       ),
     ),
   };
@@ -117,6 +132,7 @@ function slotFor(
   hour: number,
   start: Date,
   claim: ScheduleClaimRow | undefined,
+  now: Date,
 ): StaffScheduleSlot {
   const slot: StaffScheduleSlot = {
     courtId: court.id,
@@ -152,6 +168,8 @@ function slotFor(
       endsAt: new Date(
         claim.starts_at.getTime() + claim.duration_hours * 60 * 60 * 1000,
       ).toISOString(),
+      started: claim.starts_at.getTime() <= now.getTime(),
+      noShow: claim.no_show,
     };
   }
   return slot;
@@ -171,12 +189,16 @@ async function readScheduleClaims(date: VenueDate): Promise<ScheduleClaimRow[]> 
             players.phone as booker_phone,
             blocks.id as block_id,
             blocks.starts_at as block_starts_at,
-            blocks.slot_count as block_slot_count
+            blocks.slot_count as block_slot_count,
+            strikes.id is not null as no_show
        from slot_claims
        left join bookings
          on slot_claims.source_kind = 'booking'
         and bookings.id = slot_claims.source_id
        left join players on players.id = bookings.booker_id
+       left join strikes
+         on strikes.booking_id = bookings.id
+        and strikes.reason = 'no_show'
        left join blocks
          on slot_claims.source_kind = 'block'
         and blocks.id = slot_claims.source_id

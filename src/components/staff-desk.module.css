@@ -110,6 +110,15 @@
   font-size: 0.8rem;
 }
 
+.takenButton span.noShowTag {
+  background: #fef3f2;
+  border-radius: 0.5rem;
+  color: #b42318;
+  font-weight: 700;
+  justify-self: start;
+  padding: 0.1rem 0.4rem;
+}
+
 .slotButton:hover,
 .slotButton:focus-visible,
 .takenButton:hover,

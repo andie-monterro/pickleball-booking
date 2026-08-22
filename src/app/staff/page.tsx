@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { AuditLogFeed } from "@/components/audit-log-feed";
 import { StaffAccounts } from "@/components/staff-accounts";
 import { StaffDesk } from "@/components/staff-desk";
+import { StaffStrikes } from "@/components/staff-strikes";
 import { readAuditLog } from "@/lib/audit-log";
 import { SESSION_COOKIE_NAME, readPlayerSessionToken } from "@/lib/auth/auth";
 import { readStaffAccounts } from "@/lib/staff/accounts";
@@ -58,6 +59,7 @@ export default async function StaffPage({ searchParams }: StaffPageProps) {
         schedule={schedule}
         staffName={staff.displayName}
       />
+      <StaffStrikes players={players} />
       <StaffAccounts accounts={accounts} signedInStaffId={staff.id} />
       <AuditLogFeed entries={auditEntries} />
     </main>

@@ -164,6 +164,102 @@ describe("app shell", () => {
     }
   });
 
+  it("offers a No-show mark on a started Booking and shows the mark at the desk", async () => {
+    const pool = getPool();
+    const staff = {
+      id: "shell-noshow-staff",
+      name: "Desk Two",
+      phone: "+84903000004",
+      token: "shell-noshow-staff-session",
+    };
+    const booker = {
+      id: "shell-noshow-player",
+      name: "Bao Pham",
+      phone: "+84903000005",
+    };
+    const bookingId = "shell-noshow-booking";
+    const now = new Date();
+    // The venue day before this one, at 10:00 venue time: a Slot inside Opening
+    // Hours that has certainly started, whatever time this test runs at. The
+    // desk reaches a past day through the date parameter.
+    const yesterday = new Date(now.getTime() + 7 * 60 * 60 * 1000 - 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
+    const slotStart = `${yesterday}T03:00:00.000Z`;
+    try {
+      for (const account of [staff, booker]) {
+        await pool.query(
+          `insert into players (id, display_name, phone, created_at)
+           values ($1, $2, $3, $4)`,
+          [account.id, account.name, account.phone, now],
+        );
+      }
+      await pool.query(
+        `insert into player_sessions (token_hash, player_id, expires_at, created_at)
+         values ($1, $2, $3, $4)`,
+        [
+          createHash("sha256").update(staff.token).digest("hex"),
+          staff.id,
+          new Date(now.getTime() + 60 * 60 * 1000),
+          now,
+        ],
+      );
+      await pool.query(
+        "insert into staff_accounts (player_id, granted_at) values ($1, $2)",
+        [staff.id, now],
+      );
+      await pool.query(
+        `insert into bookings (id, booker_id, court_id, starts_at, duration_hours, created_at)
+         values ($1, $2, 3, $3, 1, $4)`,
+        [bookingId, booker.id, slotStart, now],
+      );
+      await pool.query(
+        `insert into slot_claims (court_id, slot_starts_at, source_kind, source_id)
+         values (3, $1, 'booking', $2)`,
+        [slotStart, bookingId],
+      );
+
+      const staffCookie = `pb_session=${staff.token}`;
+      const desk = await fetch(`${baseUrl}/staff?date=${yesterday}`, {
+        headers: { cookie: staffCookie },
+      });
+      const deskPage = await desk.text();
+      expect(desk.status).toBe(200);
+      expect(deskPage).toContain(
+        'aria-label="Manage Bao Pham on Court 3 at 10:00"',
+      );
+      // Staff waive Strikes from the desk itself.
+      expect(deskPage).toContain("Strikes and waivers");
+
+      const marked = await fetch(`${baseUrl}/api/staff/no-shows`, {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: staffCookie },
+        body: JSON.stringify({ bookingId }),
+      });
+      expect(marked.status).toBe(201);
+
+      const markedDesk = await fetch(`${baseUrl}/staff?date=${yesterday}`, {
+        headers: { cookie: staffCookie },
+      });
+      const markedPage = await markedDesk.text();
+      // The grid says which Bookings are marked, and the Audit Log on the same
+      // page says who marked them.
+      expect(markedPage).toContain("No-show");
+      expect(markedPage).toContain("marked a No-show");
+      expect(markedPage).toContain("Desk Two");
+    } finally {
+      await pool.query("truncate audit_log_entries");
+      await pool.query("delete from strikes where booking_id = $1", [bookingId]);
+      await pool.query("delete from slot_claims where source_id = $1", [bookingId]);
+      await pool.query("delete from bookings where id = $1", [bookingId]);
+      await pool.query("delete from staff_accounts where player_id = $1", [staff.id]);
+      await pool.query("delete from player_sessions where player_id = $1", [staff.id]);
+      await pool.query("delete from players where id = any($1)", [
+        [staff.id, booker.id],
+      ]);
+    }
+  });
+
   it("shows a banned Player the ban end date instead of bookable Slots", async () => {
     const pool = getPool();
     const account = {

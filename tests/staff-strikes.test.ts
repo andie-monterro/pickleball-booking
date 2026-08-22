@@ -4,6 +4,7 @@ import * as meRoute from "@/app/api/auth/me/route";
 import * as bookingsRoute from "@/app/api/bookings/route";
 import * as auditLogRoute from "@/app/api/staff/audit-log/route";
 import * as staffBookingsRoute from "@/app/api/staff/bookings/route";
+import * as staffScheduleRoute from "@/app/api/staff/schedule/route";
 import * as noShowsRoute from "@/app/api/staff/no-shows/route";
 import * as strikesRoute from "@/app/api/staff/strikes/route";
 import * as waiversRoute from "@/app/api/staff/waivers/route";
@@ -13,6 +14,7 @@ import { httpDelete, httpGet, httpPost } from "./harness/http";
 
 // Opening Hours are 06:00–22:00 every day, so 09:00 and 10:00 venue time
 // (Asia/Ho_Chi_Minh, UTC+7) are both real Slots.
+const DATE = "2026-08-21";
 const BOOKED_AT = new Date("2026-08-21T02:00:00.000Z"); // 09:00 venue time
 const SLOT = "2026-08-21T03:00:00.000Z"; // 10:00 venue time
 const AFTER_START = new Date("2026-08-21T03:30:00.000Z"); // 10:30 venue time
@@ -180,6 +182,23 @@ async function readStrikes(playerId = PLAYER.playerId): Promise<
   return (await response.json()).strikes;
 }
 
+// How the desk sees one Booking: the schedule read is what the staff page
+// renders, so the affordance to mark or undo comes from here.
+async function scheduledBooking(
+  bookingId: string,
+): Promise<{ started: boolean; noShow: boolean } | undefined> {
+  const response = await httpGet(
+    staffScheduleRoute,
+    `/api/staff/schedule?date=${DATE}`,
+    cookieFor(STAFF),
+  );
+  expect(response.status).toBe(200);
+  const { slots } = await response.json();
+  return slots.find(
+    (slot: { booking?: { id: string } }) => slot.booking?.id === bookingId,
+  )?.booking;
+}
+
 async function playerProfile(): Promise<{
   strikeCount: number;
   bookingBanEndsAt: string | null;
@@ -240,6 +259,42 @@ describe("No-show marking", () => {
 
     expect(atStart.status).toBe(201);
     expect(await playerProfile()).toMatchObject({ strikeCount: 1 });
+  });
+});
+
+describe("The desk's view of a No-show", () => {
+  beforeEach(async () => {
+    setClock(fixedClock(BOOKED_AT));
+    await resetStrikeData();
+  });
+
+  afterEach(async () => {
+    resetClock();
+    await clearStrikeData();
+  });
+
+  it("tells the desk which Bookings have started and which are marked", async () => {
+    const bookingId = await bookSlot();
+
+    expect(await scheduledBooking(bookingId)).toMatchObject({
+      started: false,
+      noShow: false,
+    });
+
+    setClock(fixedClock(AFTER_START));
+    expect(await scheduledBooking(bookingId)).toMatchObject({
+      started: true,
+      noShow: false,
+    });
+
+    expect((await markNoShow(bookingId)).status).toBe(201);
+    expect(await scheduledBooking(bookingId)).toMatchObject({
+      started: true,
+      noShow: true,
+    });
+
+    expect((await undoNoShow(bookingId)).status).toBe(200);
+    expect(await scheduledBooking(bookingId)).toMatchObject({ noShow: false });
   });
 });
 
