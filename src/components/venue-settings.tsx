@@ -7,17 +7,8 @@ import type {
   HorizonSettings,
   ManagedCourt,
 } from "@/lib/staff/venue-settings";
+import { formatHour, venueWeekdayName } from "@/lib/venue-date";
 import styles from "./venue-settings.module.css";
-
-const WEEKDAY_NAME = [
-  "Sunday",
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
-];
 
 // Whole hours only, and a day ends at midnight at the latest.
 const START_HOURS = Array.from({ length: 24 }, (_, hour) => hour);
@@ -41,10 +32,6 @@ const HORIZON_ERROR: Record<string, string> = {
   invalid_request:
     "Give both horizons in whole days, up to 365, with the Member one at least as long as the casual one.",
 };
-
-function formatHour(hour: number): string {
-  return `${hour.toString().padStart(2, "0")}:00`;
-}
 
 async function readError(
   response: Response,
@@ -280,12 +267,12 @@ export function VenueSettings({ courts, openingHours, horizons }: VenueSettingsP
         <ul className={styles.rows}>
           {openingHours.map((day) => (
             <li key={day.dayOfWeek}>
-              <strong className={styles.weekday}>{WEEKDAY_NAME[day.dayOfWeek]}</strong>
+              <strong className={styles.weekday}>{venueWeekdayName(day.dayOfWeek)}</strong>
               <span className={styles.rowActions}>
                 <label className={styles.inlineField}>
                   Opens
                   <select
-                    aria-label={`${WEEKDAY_NAME[day.dayOfWeek]} opens at`}
+                    aria-label={`${venueWeekdayName(day.dayOfWeek)} opens at`}
                     disabled={savingWeekday !== undefined}
                     onChange={(event) =>
                       saveOpeningHours(
@@ -307,7 +294,7 @@ export function VenueSettings({ courts, openingHours, horizons }: VenueSettingsP
                 <label className={styles.inlineField}>
                   Closes
                   <select
-                    aria-label={`${WEEKDAY_NAME[day.dayOfWeek]} closes at`}
+                    aria-label={`${venueWeekdayName(day.dayOfWeek)} closes at`}
                     disabled={savingWeekday !== undefined || day.startHour === null}
                     onChange={(event) =>
                       saveOpeningHours(
@@ -329,8 +316,8 @@ export function VenueSettings({ courts, openingHours, horizons }: VenueSettingsP
                 <button
                   aria-label={
                     day.startHour === null
-                      ? `Open on ${WEEKDAY_NAME[day.dayOfWeek]}`
-                      : `Close all day on ${WEEKDAY_NAME[day.dayOfWeek]}`
+                      ? `Open on ${venueWeekdayName(day.dayOfWeek)}`
+                      : `Close all day on ${venueWeekdayName(day.dayOfWeek)}`
                   }
                   className={styles.secondaryButton}
                   disabled={savingWeekday !== undefined}

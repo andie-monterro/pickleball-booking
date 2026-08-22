@@ -52,6 +52,25 @@ export function venueSlotStart(date: VenueDate, hour: number): Date {
   return new Date(Date.UTC(date.year, date.month - 1, date.day, hour - HO_CHI_MINH_UTC_OFFSET_HOURS));
 }
 
+const WEEKDAY_NAMES = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
+
 export function weekdayForVenueDate(date: VenueDate): number {
   return new Date(Date.UTC(date.year, date.month - 1, date.day)).getUTCDay();
+}
+
+// A whole venue hour, as the grid and the settings panel write it.
+export function formatHour(hour: number): string {
+  return `${hour.toString().padStart(2, "0")}:00`;
+}
+
+export function venueWeekdayName(dayOfWeek: number): string {
+  return WEEKDAY_NAMES[dayOfWeek];
 }

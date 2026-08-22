@@ -1,5 +1,6 @@
 import type { AuditEntry, StrikeAuditDetails } from "@/lib/audit-log";
 import { VENUE_TIME_ZONE } from "@/lib/clock";
+import { venueWeekdayName } from "@/lib/venue-date";
 import styles from "./audit-log-feed.module.css";
 
 const VENUE_TIME = new Intl.DateTimeFormat("en-GB", {
@@ -18,16 +19,6 @@ const VENUE_DATE = new Intl.DateTimeFormat("en-GB", {
   timeZone: VENUE_TIME_ZONE,
   dateStyle: "medium",
 });
-
-const WEEKDAY_NAME = [
-  "Sunday",
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
-];
 
 const ACTION_LABEL: Record<AuditEntry["action"], string> = {
   booking_created: "created a Booking",
@@ -76,7 +67,7 @@ function subjectOf(entry: AuditEntry): string {
   }
   if ("weekday" in details) {
     const { weekday, openingHours, previousOpeningHours } = details;
-    return `— ${WEEKDAY_NAME[weekday]}: ${openingHours ?? "closed"} (was ${
+    return `— ${venueWeekdayName(weekday)}: ${openingHours ?? "closed"} (was ${
       previousOpeningHours ?? "closed"
     })`;
   }

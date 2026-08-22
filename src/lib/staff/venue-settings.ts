@@ -18,7 +18,7 @@ import {
 } from "@/lib/audit-log";
 import { clock } from "@/lib/clock";
 import { getPool, isUniqueViolation, runInTransaction } from "@/lib/db";
-import { formatHour } from "@/lib/venue-grid";
+import { formatHour } from "@/lib/venue-date";
 
 const MAX_COURT_NAME_LENGTH = 60;
 
@@ -100,6 +100,12 @@ function requestBodyRecord(input: unknown): Record<string, unknown> {
   return { ...input };
 }
 
+// Settings are whole numbers in a fixed range — an hour of the day, a weekday,
+// a count of days. One guard for all of them, so a parser reads as its rule.
+function isWholeNumberIn(value: unknown, low: number, high: number): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= low && value <= high;
+}
+
 function normalizedCourtName(value: unknown): string {
   if (typeof value !== "string") {
     throw new VenueSettingsError("invalid_request", 400);
@@ -155,13 +161,13 @@ export async function updateCourt(
   rawInput: unknown,
 ): Promise<ManagedCourt> {
   const record = requestBodyRecord(rawInput);
+  const courtId = record.courtId;
   if (
-    !Number.isInteger(record.courtId) ||
+    !isWholeNumberIn(courtId, 1, Number.MAX_SAFE_INTEGER) ||
     (record.active !== undefined && typeof record.active !== "boolean")
   ) {
     throw new VenueSettingsError("invalid_request", 400);
   }
-  const courtId = Number(record.courtId);
   const name = record.name === undefined ? undefined : normalizedCourtName(record.name);
   const active = typeof record.active === "boolean" ? record.active : undefined;
   const now = clock.now();
@@ -259,7 +265,9 @@ async function recordCourtAction(
 }
 
 // Every weekday, closed ones included: the panel edits a fixed week, so a day
-// with no hours has to be there to be given some.
+// with no hours has to be there to be given some. A weekday carries one range,
+// which is what setOpeningHours leaves behind; a day with several takes the
+// earliest, so a hand-written extra range cannot hide the day's opening time.
 export async function readOpeningHours(): Promise<DayOpeningHours[]> {
   const result = await getPool().query<OpeningHoursRow>(
     "select day_of_week, start_hour, end_hour from opening_hours order by day_of_week, start_hour",
@@ -278,33 +286,23 @@ export async function readOpeningHours(): Promise<DayOpeningHours[]> {
 function parseOpeningHours(input: unknown): DayOpeningHours {
   const record = requestBodyRecord(input);
   const { dayOfWeek, startHour, endHour } = record;
-  if (
-    !Number.isInteger(dayOfWeek) ||
-    Number(dayOfWeek) < 0 ||
-    Number(dayOfWeek) > 6
-  ) {
+  if (!isWholeNumberIn(dayOfWeek, 0, 6)) {
     throw new VenueSettingsError("invalid_request", 400);
   }
   // A closed day is both hours left out; one of the two alone says nothing.
   if (startHour === null && endHour === null) {
-    return { dayOfWeek: Number(dayOfWeek), startHour: null, endHour: null };
+    return { dayOfWeek, startHour: null, endHour: null };
   }
+  // End 24 is midnight at the end of the day, and closing must come after
+  // opening: a weekday's hours never run past its own midnight.
   if (
-    !Number.isInteger(startHour) ||
-    !Number.isInteger(endHour) ||
-    Number(startHour) < 0 ||
-    Number(startHour) > 23 ||
-    Number(endHour) < 1 ||
-    Number(endHour) > 24 ||
-    Number(startHour) >= Number(endHour)
+    !isWholeNumberIn(startHour, 0, 23) ||
+    !isWholeNumberIn(endHour, 1, 24) ||
+    startHour >= endHour
   ) {
     throw new VenueSettingsError("invalid_request", 400);
   }
-  return {
-    dayOfWeek: Number(dayOfWeek),
-    startHour: Number(startHour),
-    endHour: Number(endHour),
-  };
+  return { dayOfWeek, startHour, endHour };
 }
 
 function openingHoursLabel(hours: DayOpeningHours): string | null {
@@ -420,18 +418,13 @@ export async function readHorizonSettings(): Promise<HorizonSettings> {
 function parseHorizonSettings(input: unknown): HorizonSettings {
   const { casualHorizonDays, memberHorizonDays } = requestBodyRecord(input);
   if (
-    !Number.isInteger(casualHorizonDays) ||
-    !Number.isInteger(memberHorizonDays) ||
-    Number(casualHorizonDays) < 1 ||
-    Number(memberHorizonDays) > MAX_HORIZON_DAYS ||
-    Number(memberHorizonDays) < Number(casualHorizonDays)
+    !isWholeNumberIn(casualHorizonDays, 1, MAX_HORIZON_DAYS) ||
+    !isWholeNumberIn(memberHorizonDays, 1, MAX_HORIZON_DAYS) ||
+    memberHorizonDays < casualHorizonDays
   ) {
     throw new VenueSettingsError("invalid_request", 400);
   }
-  return {
-    casualHorizonDays: Number(casualHorizonDays),
-    memberHorizonDays: Number(memberHorizonDays),
-  };
+  return { casualHorizonDays, memberHorizonDays };
 }
 
 // Both horizons move together, because the rule that a Member reaches at least

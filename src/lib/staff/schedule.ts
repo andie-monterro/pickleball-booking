@@ -14,12 +14,17 @@ import { getPool } from "@/lib/db";
 import { slotRangeEnd, type ClaimKind } from "@/lib/slot-claims";
 import {
   claimKey,
-  formatHour,
   readVenueGrid,
   venueDayBounds,
   type VenueCourt,
 } from "@/lib/venue-grid";
-import { addDays, parseVenueDate, venueDateFromInstant, type VenueDate } from "@/lib/venue-date";
+import {
+  addDays,
+  formatHour,
+  parseVenueDate,
+  venueDateFromInstant,
+  type VenueDate,
+} from "@/lib/venue-date";
 
 export type StaffSlotStatus = "free" | "taken" | "blocked";
 
