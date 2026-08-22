@@ -21,6 +21,14 @@ const ACTION_LABEL: Record<AuditEntry["action"], string> = {
   block_removed: "removed a Block",
   staff_account_created: "created a Staff account",
   staff_account_deactivated: "deactivated a Staff account",
+  no_show_marked: "marked a No-show",
+  no_show_undone: "undid a No-show mark",
+  strike_waived: "waived a Strike",
+};
+
+const STRIKE_REASON_LABEL: Record<"late_cancel" | "no_show", string> = {
+  late_cancel: "Late Cancel",
+  no_show: "No-show",
 };
 
 // What the action was about. An entry snapshots it, so the sentence reads the
@@ -32,6 +40,12 @@ function subjectOf(entry: AuditEntry): string {
     return `${booker}${courtName}, ${VENUE_DATE_TIME.format(
       new Date(startsAt),
     )}–${VENUE_TIME.format(new Date(endsAt))}`;
+  }
+  if ("strikeReason" in entry.details) {
+    const { earnedAt, playerName, strikeReason } = entry.details;
+    return `for ${playerName} — ${
+      STRIKE_REASON_LABEL[strikeReason]
+    } earned ${VENUE_DATE_TIME.format(new Date(earnedAt))}`;
   }
   return `for ${entry.details.accountName} — ${entry.details.accountPhone}`;
 }
