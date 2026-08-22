@@ -37,6 +37,16 @@ const CREATE_ERROR: Record<string, string> = {
   invalid_display_name: "Enter the player's name.",
 };
 
+const NO_SHOW_ERROR: Record<string, string> = {
+  booking_not_started:
+    "This Booking has not started yet, so it cannot be marked as a No-show.",
+  booking_cancelled:
+    "This Booking was cancelled, so it cannot be marked as a No-show.",
+  no_show_already_marked: "This Booking is already marked as a No-show.",
+  no_show_not_marked: "This Booking is not marked as a No-show.",
+  booking_not_found: "That Booking no longer exists.",
+};
+
 const BLOCK_ERROR: Record<string, string> = {
   slot_taken:
     "A Slot in this range is already taken. Cancel that Booking first, then place the Block.",
@@ -45,6 +55,25 @@ const BLOCK_ERROR: Record<string, string> = {
 };
 
 const HOUR_MS = 60 * 60 * 1000;
+
+// The desk judges a No-show, so the panel says what the judgement costs the
+// Booker and never hides that the mark can be taken back.
+function noShowHint(booking: ScheduledBooking): string {
+  if (booking.noShow) {
+    return "Marked as a No-show. The Booker holds one Strike for it. Undoing the mark removes that Strike, and any Booking Ban that only existed because of it.";
+  }
+  if (booking.started) {
+    return "The Booker never arrived? Marking a No-show earns them one Strike. You can undo it afterwards.";
+  }
+  return "This Booking has not started yet, so there is nothing to judge: a No-show can only be marked once it has begun.";
+}
+
+function noShowActionLabel(booking: ScheduledBooking, judging: boolean): string {
+  if (judging) {
+    return booking.noShow ? "Undoing…" : "Marking…";
+  }
+  return booking.noShow ? "Undo No-show" : "Mark No-show";
+}
 
 type StaffDeskProps = {
   schedule: StaffSchedule;
@@ -60,9 +89,10 @@ export function StaffDesk({ schedule, players, staffName }: StaffDeskProps) {
   const [newPlayerPhone, setNewPlayerPhone] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [createError, setCreateError] = useState<string>();
-  const [pendingCancellation, setPendingCancellation] = useState<ScheduledBooking>();
+  const [pendingBooking, setPendingBooking] = useState<ScheduledBooking>();
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string>();
+  const [judging, setJudging] = useState(false);
   const [blocking, setBlocking] = useState(false);
   const [blockError, setBlockError] = useState<string>();
   const [pendingBlockRemoval, setPendingBlockRemoval] = useState<ScheduledBlock>();
@@ -75,7 +105,7 @@ export function StaffDesk({ schedule, players, staffName }: StaffDeskProps) {
   // The selection is a contiguous range of free Slots on one Court: a Booking
   // takes one or two of them, a Block takes as many as Staff pick.
   const selectSlot = (slot: StaffScheduleSlot) => {
-    setPendingCancellation(undefined);
+    setPendingBooking(undefined);
     setPendingBlockRemoval(undefined);
     setCreateError(undefined);
     setBlockError(undefined);
@@ -147,7 +177,7 @@ export function StaffDesk({ schedule, players, staffName }: StaffDeskProps) {
   };
 
   const confirmCancellation = async () => {
-    if (!pendingCancellation) {
+    if (!pendingBooking) {
       return;
     }
     setCancelling(true);
@@ -156,7 +186,7 @@ export function StaffDesk({ schedule, players, staffName }: StaffDeskProps) {
       const response = await fetch("/api/staff/bookings", {
         method: "DELETE",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ bookingId: pendingCancellation.id }),
+        body: JSON.stringify({ bookingId: pendingBooking.id }),
       });
       if (!response.ok) {
         setCancelError(
@@ -165,10 +195,41 @@ export function StaffDesk({ schedule, players, staffName }: StaffDeskProps) {
         router.refresh();
         return;
       }
-      setPendingCancellation(undefined);
+      setPendingBooking(undefined);
       router.refresh();
     } finally {
       setCancelling(false);
+    }
+  };
+
+  // Marking and undoing are the same call with a different method, and both
+  // change the Booker's Strike count, so the panel closes and the page reloads
+  // the schedule and the Audit Log afterwards either way.
+  const judgeNoShow = async (alreadyMarked: boolean) => {
+    if (!pendingBooking) {
+      return;
+    }
+    setJudging(true);
+    setCancelError(undefined);
+    try {
+      const response = await fetch("/api/staff/no-shows", {
+        method: alreadyMarked ? "DELETE" : "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ bookingId: pendingBooking.id }),
+      });
+      if (!response.ok) {
+        const body = (await response.json()) as { error?: string };
+        setCancelError(
+          NO_SHOW_ERROR[body.error ?? ""] ??
+            "The No-show could not be changed. Refresh the page and try again.",
+        );
+        router.refresh();
+        return;
+      }
+      setPendingBooking(undefined);
+      router.refresh();
+    } finally {
+      setJudging(false);
     }
   };
 
@@ -299,7 +360,7 @@ export function StaffDesk({ schedule, players, staffName }: StaffDeskProps) {
                             className={styles.blockedButton}
                             onClick={() => {
                               setSelectedSlots([]);
-                              setPendingCancellation(undefined);
+                              setPendingBooking(undefined);
                               setBlockError(undefined);
                               setPendingBlockRemoval(block);
                             }}
@@ -318,18 +379,21 @@ export function StaffDesk({ schedule, players, staffName }: StaffDeskProps) {
                     return (
                       <td className={styles.taken} key={court.id}>
                         <button
-                          aria-label={`Cancel ${booking.bookerName} on ${slot.courtName} at ${slot.hour}`}
+                          aria-label={`Manage ${booking.bookerName} on ${slot.courtName} at ${slot.hour}`}
                           className={styles.takenButton}
                           onClick={() => {
                             setSelectedSlots([]);
                             setPendingBlockRemoval(undefined);
                             setCancelError(undefined);
-                            setPendingCancellation(booking);
+                            setPendingBooking(booking);
                           }}
                           type="button"
                         >
                           <strong>{booking.bookerName}</strong>
                           <span>{booking.bookerPhone}</span>
+                          {booking.noShow && (
+                            <span className={styles.noShowTag}>No-show</span>
+                          )}
                         </button>
                       </td>
                     );
@@ -508,15 +572,16 @@ export function StaffDesk({ schedule, players, staffName }: StaffDeskProps) {
         </aside>
       )}
 
-      {pendingCancellation && (
-        <aside aria-label="Cancel this Booking" className={styles.panel} role="dialog">
+      {pendingBooking && (
+        <aside aria-label="Manage this Booking" className={styles.panel} role="dialog">
           <div>
-            <p className={styles.eyebrow}>Cancel this Booking</p>
-            <h3>{pendingCancellation.bookerName}</h3>
+            <p className={styles.eyebrow}>Manage this Booking</p>
+            <h3>{pendingBooking.bookerName}</h3>
             <p>
-              {VENUE_DATE_TIME.format(new Date(pendingCancellation.startsAt))}–
-              {VENUE_TIME.format(new Date(pendingCancellation.endsAt))}
+              {VENUE_DATE_TIME.format(new Date(pendingBooking.startsAt))}–
+              {VENUE_TIME.format(new Date(pendingBooking.endsAt))}
             </p>
+            <p className={styles.hint}>{noShowHint(pendingBooking)}</p>
             <p>
               A staff cancellation is penalty-free at any time. The Booker earns
               no Strike and the Slots reopen at once.
@@ -530,15 +595,25 @@ export function StaffDesk({ schedule, players, staffName }: StaffDeskProps) {
           <div className={styles.panelActions}>
             <button
               className={styles.secondaryButton}
-              disabled={cancelling}
-              onClick={() => setPendingCancellation(undefined)}
+              disabled={cancelling || judging}
+              onClick={() => setPendingBooking(undefined)}
               type="button"
             >
-              Keep Booking
+              Close
             </button>
+            {(pendingBooking.noShow || pendingBooking.started) && (
+              <button
+                className={styles.secondaryButton}
+                disabled={cancelling || judging}
+                onClick={() => judgeNoShow(pendingBooking.noShow)}
+                type="button"
+              >
+                {noShowActionLabel(pendingBooking, judging)}
+              </button>
+            )}
             <button
               className={styles.primaryButton}
-              disabled={cancelling}
+              disabled={cancelling || judging}
               onClick={confirmCancellation}
               type="button"
             >
@@ -547,7 +622,6 @@ export function StaffDesk({ schedule, players, staffName }: StaffDeskProps) {
           </div>
         </aside>
       )}
-
     </>
   );
 }

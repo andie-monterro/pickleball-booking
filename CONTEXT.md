@@ -44,7 +44,7 @@ A venue-side user with an individual account and full powers: create or cancel a
 _Avoid_: Admin, manager, operator
 
 **Audit Log**:
-The record of Staff actions — who did what, and when — kept so disputes stay resolvable. Every Staff-made creation, cancellation, or Block change is attributed to an individual Staff account.
+The record of Staff actions — who did what, and when — kept so disputes stay resolvable. Every Staff-made creation, cancellation, Block change, No-show mark or undo, and Strike waiver is attributed to an individual Staff account.
 _Avoid_: History, activity feed
 
 **Opening Hours**:

@@ -13,7 +13,10 @@ export type AuditAction =
   | "block_placed"
   | "block_removed"
   | "staff_account_created"
-  | "staff_account_deactivated";
+  | "staff_account_deactivated"
+  | "no_show_marked"
+  | "no_show_undone"
+  | "strike_waived";
 
 // Who acted. Only the id and the name are needed, so any Staff session value
 // fits, and the log keeps the name as it read at the time.
@@ -25,9 +28,9 @@ export interface StaffIdentity {
 // An entry stays readable on its own, years later, whether or not the records it
 // describes still exist. What it snapshots depends on the action, so details is
 // a union: the Slots an action took — a Booking or a Block, and a Block has no
-// Booker — or the name and phone of the Staff account granted or revoked.
-// Readers tell them apart by the fields, not by the action, so a details shape
-// can never be read as the wrong one.
+// Booker — the name and phone of the Staff account granted or revoked, or the
+// Strike a waiver let go. Readers tell them apart by the fields, not by the
+// action, so a details shape can never be read as the wrong one.
 export interface BookingAuditDetails {
   courtName: string;
   startsAt: string;
@@ -41,7 +44,20 @@ export interface StaffAccountAuditDetails {
   accountPhone: string;
 }
 
-export type AuditEntryDetails = BookingAuditDetails | StaffAccountAuditDetails;
+// A waived Strike is identified by what it was for, not by its row: the row may
+// be deleted later (undoing a No-show mark does exactly that), and the entry
+// still has to read the same.
+export interface StrikeAuditDetails {
+  strikeReason: "late_cancel" | "no_show";
+  earnedAt: string;
+  playerName: string;
+  playerPhone: string;
+}
+
+export type AuditEntryDetails =
+  | BookingAuditDetails
+  | StaffAccountAuditDetails
+  | StrikeAuditDetails;
 
 export interface AuditEntry {
   id: string;
@@ -83,12 +99,18 @@ export type RecordedAction = RecordedActionBase &
           | "booking_created"
           | "booking_cancelled"
           | "block_placed"
-          | "block_removed";
+          | "block_removed"
+          | "no_show_marked"
+          | "no_show_undone";
         details: BookingAuditDetails;
       }
     | {
         action: "staff_account_created" | "staff_account_deactivated";
         details: StaffAccountAuditDetails;
+      }
+    | {
+        action: "strike_waived";
+        details: StrikeAuditDetails;
       }
   );
 
