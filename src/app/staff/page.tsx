@@ -2,12 +2,19 @@ import { cookies } from "next/headers";
 import { AuditLogFeed } from "@/components/audit-log-feed";
 import { StaffAccounts } from "@/components/staff-accounts";
 import { StaffDesk } from "@/components/staff-desk";
+import { StaffMemberships } from "@/components/staff-memberships";
 import { StaffStrikes } from "@/components/staff-strikes";
+import { VenueSettings } from "@/components/venue-settings";
 import { readAuditLog } from "@/lib/audit-log";
 import { SESSION_COOKIE_NAME, readPlayerSessionToken } from "@/lib/auth/auth";
 import { readStaffAccounts } from "@/lib/staff/accounts";
 import { readDeskPlayers } from "@/lib/staff/players";
 import { readStaffSchedule } from "@/lib/staff/schedule";
+import {
+  readHorizonSettings,
+  readManagedCourts,
+  readOpeningHours,
+} from "@/lib/staff/venue-settings";
 import styles from "./page.module.css";
 
 export const dynamic = "force-dynamic";
@@ -45,10 +52,21 @@ export default async function StaffPage({ searchParams }: StaffPageProps) {
     );
   }
 
-  const [schedule, players, accounts, auditEntries] = await Promise.all([
+  const [
+    schedule,
+    players,
+    accounts,
+    courts,
+    openingHours,
+    horizons,
+    auditEntries,
+  ] = await Promise.all([
     readStaffSchedule(date),
     readDeskPlayers(),
     readStaffAccounts(),
+    readManagedCourts(),
+    readOpeningHours(),
+    readHorizonSettings(),
     readAuditLog(),
   ]);
 
@@ -60,6 +78,8 @@ export default async function StaffPage({ searchParams }: StaffPageProps) {
         staffName={staff.displayName}
       />
       <StaffStrikes players={players} />
+      <StaffMemberships players={players} />
+      <VenueSettings courts={courts} horizons={horizons} openingHours={openingHours} />
       <StaffAccounts accounts={accounts} signedInStaffId={staff.id} />
       <AuditLogFeed entries={auditEntries} />
     </main>

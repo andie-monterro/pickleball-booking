@@ -1,0 +1,111 @@
+.settings {
+  border-top: 1px solid #eaecf0;
+  margin-top: 2rem;
+  padding-top: 1rem;
+}
+
+.settings h3,
+.settings h4 {
+  margin: 0 0 0.25rem;
+}
+
+.group {
+  border-left: 3px solid #b2ddff;
+  margin-top: 1.5rem;
+  padding-left: 0.75rem;
+}
+
+.rows {
+  display: grid;
+  gap: 0.5rem;
+  list-style: none;
+  padding: 0;
+}
+
+.rows li {
+  align-items: center;
+  background: #f9fafb;
+  border: 1px solid #eaecf0;
+  border-radius: 0.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+}
+
+.weekday {
+  min-width: 6rem;
+}
+
+.rowActions {
+  align-items: flex-end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.newCourt {
+  margin-top: 1rem;
+  max-width: 26rem;
+}
+
+.field {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0.5rem 0;
+  max-width: 26rem;
+}
+
+.inlineField {
+  display: grid;
+  font-size: 0.875rem;
+  gap: 0.25rem;
+}
+
+.field input,
+.inlineField select {
+  border: 1px solid #d0d5dd;
+  border-radius: 0.5rem;
+  font: inherit;
+  padding: 0.6rem;
+}
+
+.hint {
+  color: #475467;
+  font-size: 0.875rem;
+  margin: 0.25rem 0;
+}
+
+.error {
+  color: #b42318;
+  font-weight: 600;
+}
+
+.primaryButton,
+.secondaryButton {
+  border-radius: 0.5rem;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  padding: 0.6rem 0.9rem;
+  white-space: nowrap;
+}
+
+.primaryButton {
+  background: #175cd3;
+  border: 1px solid #175cd3;
+  color: #fff;
+}
+
+.secondaryButton {
+  background: #fff;
+  border: 1px solid #d0d5dd;
+  color: #344054;
+}
+
+.primaryButton:disabled,
+.secondaryButton:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
