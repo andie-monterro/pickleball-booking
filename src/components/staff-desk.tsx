@@ -205,7 +205,7 @@ export function StaffDesk({ schedule, players, staffName }: StaffDeskProps) {
   // Marking and undoing are the same call with a different method, and both
   // change the Booker's Strike count, so the panel closes and the page reloads
   // the schedule and the Audit Log afterwards either way.
-  const judgeNoShow = async (marked: boolean) => {
+  const judgeNoShow = async (alreadyMarked: boolean) => {
     if (!pendingBooking) {
       return;
     }
@@ -213,7 +213,7 @@ export function StaffDesk({ schedule, players, staffName }: StaffDeskProps) {
     setCancelError(undefined);
     try {
       const response = await fetch("/api/staff/no-shows", {
-        method: marked ? "DELETE" : "POST",
+        method: alreadyMarked ? "DELETE" : "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ bookingId: pendingBooking.id }),
       });
@@ -622,7 +622,6 @@ export function StaffDesk({ schedule, players, staffName }: StaffDeskProps) {
           </div>
         </aside>
       )}
-
     </>
   );
 }

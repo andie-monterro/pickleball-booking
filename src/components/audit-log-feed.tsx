@@ -1,4 +1,4 @@
-import type { AuditEntry } from "@/lib/audit-log";
+import type { AuditEntry, StrikeAuditDetails } from "@/lib/audit-log";
 import { VENUE_TIME_ZONE } from "@/lib/clock";
 import styles from "./audit-log-feed.module.css";
 
@@ -26,7 +26,7 @@ const ACTION_LABEL: Record<AuditEntry["action"], string> = {
   strike_waived: "waived a Strike",
 };
 
-const STRIKE_REASON_LABEL: Record<"late_cancel" | "no_show", string> = {
+const STRIKE_REASON_LABEL: Record<StrikeAuditDetails["strikeReason"], string> = {
   late_cancel: "Late Cancel",
   no_show: "No-show",
 };
