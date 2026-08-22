@@ -18,7 +18,7 @@ export function httpGet(
 
 function httpJson(
   handler: RouteHandler,
-  method: "POST" | "DELETE",
+  method: "POST" | "PUT" | "PATCH" | "DELETE",
   path: string,
   body: unknown,
   headers?: HeadersInit,
@@ -40,6 +40,24 @@ export function httpPost(
   headers?: HeadersInit,
 ): Promise<Response> {
   return httpJson(route.POST, "POST", path, body, headers);
+}
+
+export function httpPut(
+  route: { PUT: RouteHandler },
+  path: string,
+  body?: unknown,
+  headers?: HeadersInit,
+): Promise<Response> {
+  return httpJson(route.PUT, "PUT", path, body, headers);
+}
+
+export function httpPatch(
+  route: { PATCH: RouteHandler },
+  path: string,
+  body?: unknown,
+  headers?: HeadersInit,
+): Promise<Response> {
+  return httpJson(route.PATCH, "PATCH", path, body, headers);
 }
 
 export function httpDelete(

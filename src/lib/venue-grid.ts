@@ -40,7 +40,11 @@ export async function readVenueGrid(date: VenueDate): Promise<VenueGrid> {
     pool.query<VenueSettingsRow>(
       "select venue_time_zone from venue_settings where id = 1",
     ),
-    pool.query<VenueCourt>("select id, name from courts order by id"),
+    // A deactivated Court is not part of the venue's grid: no Slot of it is
+    // shown, and nothing can claim one.
+    pool.query<VenueCourt>(
+      "select id, name from courts where deactivated_at is null order by id",
+    ),
     pool.query<OpeningHoursRow>(
       "select start_hour, end_hour from opening_hours where day_of_week = $1 order by start_hour",
       [weekdayForVenueDate(date)],
@@ -74,8 +78,4 @@ export function venueDayBounds(date: VenueDate): [Date, Date] {
 
 export function claimKey(courtId: number, start: Date): string {
   return `${courtId}|${start.toISOString()}`;
-}
-
-export function formatHour(hour: number): string {
-  return `${hour.toString().padStart(2, "0")}:00`;
 }

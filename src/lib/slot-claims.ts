@@ -8,8 +8,7 @@
 // which of their own errors a missing Court or a taken Slot means.
 
 import type { PoolClient, QueryResultRow } from "pg";
-
-const UNIQUE_VIOLATION = "23505";
+import { isUniqueViolation } from "@/lib/db";
 
 export type ClaimKind = "booking" | "block";
 
@@ -60,7 +59,8 @@ export async function readClaimableCourt(
                    ) < opening_hours.end_hour
               )) as open_slot_count
        from courts
-      where courts.id = $1`,
+      where courts.id = $1
+        and courts.deactivated_at is null`,
     [range.courtId, range.startsAt, range.slotCount],
   );
   const row = result.rows[0];
@@ -98,7 +98,7 @@ export async function releaseSlots(
 }
 
 export function isSlotTaken(error: unknown): boolean {
-  return (error as { code?: string } | null)?.code === UNIQUE_VIOLATION;
+  return isUniqueViolation(error);
 }
 
 export function slotRangeEnd(range: ClaimRange): Date {

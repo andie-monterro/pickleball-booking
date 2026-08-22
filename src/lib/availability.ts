@@ -7,14 +7,10 @@ import {
 import { clock, formatVenueTime } from "@/lib/clock";
 import { getPool } from "@/lib/db";
 import type { ClaimKind } from "@/lib/slot-claims";
-import {
-  claimKey,
-  formatHour,
-  readVenueGrid,
-  venueDayBounds,
-} from "@/lib/venue-grid";
+import { claimKey, readVenueGrid, venueDayBounds } from "@/lib/venue-grid";
 import {
   addDays,
+  formatHour,
   parseVenueDate,
   type VenueDate,
 } from "@/lib/venue-date";

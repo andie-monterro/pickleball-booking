@@ -1,5 +1,7 @@
 import { Pool, type PoolClient } from "pg";
 
+const UNIQUE_VIOLATION = "23505";
+
 // Either the pool or one transaction's client. A policy check that has to see
 // rows written earlier in the same transaction — a light Player record and the
 // horizon check on it, for instance — must run on that transaction's client.
@@ -39,4 +41,12 @@ export async function runInTransaction<T>(
   } finally {
     client.release();
   }
+}
+
+// A uniqueness constraint refused the write. Which one is the caller's to know:
+// the Slot claim that keeps two Bookings off one Slot, a Court name, a phone
+// number. The database is where these facts are decided, so the code that asks
+// only has to recognize its answer.
+export function isUniqueViolation(error: unknown): boolean {
+  return (error as { code?: string } | null)?.code === UNIQUE_VIOLATION;
 }

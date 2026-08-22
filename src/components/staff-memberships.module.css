@@ -1,0 +1,69 @@
+.memberships {
+  border-top: 1px solid #eaecf0;
+  margin-top: 2rem;
+  padding-top: 1rem;
+}
+
+.memberships h3 {
+  margin: 0 0 0.25rem;
+}
+
+.field {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0.5rem 0;
+  max-width: 26rem;
+}
+
+.field input,
+.field select {
+  border: 1px solid #d0d5dd;
+  border-radius: 0.5rem;
+  font: inherit;
+  padding: 0.6rem;
+}
+
+.rowActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.hint {
+  color: #475467;
+  font-size: 0.875rem;
+  margin: 0.25rem 0;
+}
+
+.error {
+  color: #b42318;
+  font-weight: 600;
+}
+
+.primaryButton,
+.secondaryButton {
+  border-radius: 0.5rem;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  padding: 0.6rem 0.9rem;
+  white-space: nowrap;
+}
+
+.primaryButton {
+  background: #175cd3;
+  border: 1px solid #175cd3;
+  color: #fff;
+}
+
+.secondaryButton {
+  background: #fff;
+  border: 1px solid #d0d5dd;
+  color: #344054;
+}
+
+.primaryButton:disabled,
+.secondaryButton:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}

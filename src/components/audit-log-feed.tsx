@@ -1,5 +1,6 @@
 import type { AuditEntry, StrikeAuditDetails } from "@/lib/audit-log";
 import { VENUE_TIME_ZONE } from "@/lib/clock";
+import { venueWeekdayName } from "@/lib/venue-date";
 import styles from "./audit-log-feed.module.css";
 
 const VENUE_TIME = new Intl.DateTimeFormat("en-GB", {
@@ -14,6 +15,11 @@ const VENUE_DATE_TIME = new Intl.DateTimeFormat("en-GB", {
   timeStyle: "short",
 });
 
+const VENUE_DATE = new Intl.DateTimeFormat("en-GB", {
+  timeZone: VENUE_TIME_ZONE,
+  dateStyle: "medium",
+});
+
 const ACTION_LABEL: Record<AuditEntry["action"], string> = {
   booking_created: "created a Booking",
   booking_cancelled: "cancelled a Booking",
@@ -24,6 +30,13 @@ const ACTION_LABEL: Record<AuditEntry["action"], string> = {
   no_show_marked: "marked a No-show",
   no_show_undone: "undid a No-show mark",
   strike_waived: "waived a Strike",
+  court_added: "added a Court",
+  court_renamed: "renamed a Court",
+  court_deactivated: "deactivated a Court",
+  court_reactivated: "brought a Court back",
+  opening_hours_changed: "changed Opening Hours",
+  booking_horizons_changed: "changed the Booking Horizons",
+  membership_changed: "changed a membership",
 };
 
 const STRIKE_REASON_LABEL: Record<StrikeAuditDetails["strikeReason"], string> = {
@@ -31,23 +44,51 @@ const STRIKE_REASON_LABEL: Record<StrikeAuditDetails["strikeReason"], string> = 
   no_show: "No-show",
 };
 
+// A venue date, kept as YYYY-MM-DD. Read at UTC midnight, which is the same
+// calendar day in venue time.
+function venueDateLabel(date: string | null): string {
+  return date === null ? "none" : VENUE_DATE.format(new Date(`${date}T00:00:00Z`));
+}
+
 // What the action was about. An entry snapshots it, so the sentence reads the
-// same after the Booking or the Staff account is gone.
+// same after the Booking, the Court or the Staff account is gone. Readers tell
+// the details shapes apart by their fields, never by the action.
 function subjectOf(entry: AuditEntry): string {
-  if ("courtName" in entry.details) {
-    const { bookerName, courtName, startsAt, endsAt } = entry.details;
+  const { details } = entry;
+  if ("strikeReason" in details) {
+    const { earnedAt, playerName, strikeReason } = details;
+    return `for ${playerName} — ${
+      STRIKE_REASON_LABEL[strikeReason]
+    } earned ${VENUE_DATE_TIME.format(new Date(earnedAt))}`;
+  }
+  if ("court" in details) {
+    const { court, previousCourt } = details;
+    return previousCourt ? `— ${previousCourt} is now ${court}` : `— ${court}`;
+  }
+  if ("weekday" in details) {
+    const { weekday, openingHours, previousOpeningHours } = details;
+    return `— ${venueWeekdayName(weekday)}: ${openingHours ?? "closed"} (was ${
+      previousOpeningHours ?? "closed"
+    })`;
+  }
+  if ("casualHorizonDays" in details) {
+    const { casualHorizonDays, memberHorizonDays } = details;
+    return `— ${memberHorizonDays} days for Members, ${casualHorizonDays} for casual players (was ${details.previousMemberHorizonDays} and ${details.previousCasualHorizonDays})`;
+  }
+  if ("memberUntil" in details) {
+    const { memberUntil, playerName, previousMemberUntil } = details;
+    return `for ${playerName} — member until ${venueDateLabel(
+      memberUntil,
+    )} (was ${venueDateLabel(previousMemberUntil)})`;
+  }
+  if ("courtName" in details) {
+    const { bookerName, courtName, startsAt, endsAt } = details;
     const booker = bookerName ? `for ${bookerName} — ` : "";
     return `${booker}${courtName}, ${VENUE_DATE_TIME.format(
       new Date(startsAt),
     )}–${VENUE_TIME.format(new Date(endsAt))}`;
   }
-  if ("strikeReason" in entry.details) {
-    const { earnedAt, playerName, strikeReason } = entry.details;
-    return `for ${playerName} — ${
-      STRIKE_REASON_LABEL[strikeReason]
-    } earned ${VENUE_DATE_TIME.format(new Date(earnedAt))}`;
-  }
-  return `for ${entry.details.accountName} — ${entry.details.accountPhone}`;
+  return `for ${details.accountName} — ${details.accountPhone}`;
 }
 
 export function AuditLogFeed({ entries }: { entries: AuditEntry[] }) {

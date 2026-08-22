@@ -117,6 +117,12 @@ describe("app shell", () => {
       // Staff manage Staff accounts from the desk itself.
       expect(desk).toContain("Staff accounts");
       expect(desk).toContain("Onboard a front-desk person");
+      // ...and the venue data the app runs on.
+      expect(desk).toContain("Venue settings");
+      expect(desk).toContain("Courts");
+      expect(desk).toContain("Opening Hours");
+      expect(desk).toContain("Booking Horizons");
+      expect(desk).toContain("Membership dates");
 
       // A Block reaches the desk as something Staff can remove. This test runs
       // on the real clock, so it picks 09:00 venue time on the current venue
@@ -257,6 +263,63 @@ describe("app shell", () => {
       await pool.query("delete from players where id = any($1)", [
         [staff.id, booker.id],
       ]);
+    }
+  });
+
+  it("adds a Court from the desk and shows it in the grid and the Audit Log", async () => {
+    const pool = getPool();
+    const staff = {
+      id: "shell-settings-staff",
+      name: "Desk Three",
+      phone: "+84903000006",
+      token: "shell-settings-staff-session",
+    };
+    const now = new Date();
+    try {
+      await pool.query(
+        `insert into players (id, display_name, phone, created_at)
+         values ($1, $2, $3, $4)`,
+        [staff.id, staff.name, staff.phone, now],
+      );
+      await pool.query(
+        `insert into player_sessions (token_hash, player_id, expires_at, created_at)
+         values ($1, $2, $3, $4)`,
+        [
+          createHash("sha256").update(staff.token).digest("hex"),
+          staff.id,
+          new Date(now.getTime() + 60 * 60 * 1000),
+          now,
+        ],
+      );
+      await pool.query(
+        "insert into staff_accounts (player_id, granted_at) values ($1, $2)",
+        [staff.id, now],
+      );
+
+      const staffCookie = `pb_session=${staff.token}`;
+      const added = await fetch(`${baseUrl}/api/staff/courts`, {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: staffCookie },
+        body: JSON.stringify({ name: "Shell Court" }),
+      });
+      expect(added.status).toBe(201);
+
+      const desk = await fetch(`${baseUrl}/staff`, { headers: { cookie: staffCookie } });
+      const deskPage = await desk.text();
+      // The new Court is a column of the schedule at once, and the Audit Log on
+      // the same page says who added it.
+      expect(deskPage).toContain("Shell Court");
+      expect(deskPage).toContain("added a Court");
+      expect(deskPage).toContain("Desk Three");
+
+      const home = await fetch(baseUrl);
+      expect(await home.text()).toContain("Shell Court");
+    } finally {
+      await pool.query("truncate audit_log_entries");
+      await pool.query("delete from courts where name = $1", ["Shell Court"]);
+      await pool.query("delete from staff_accounts where player_id = $1", [staff.id]);
+      await pool.query("delete from player_sessions where player_id = $1", [staff.id]);
+      await pool.query("delete from players where id = $1", [staff.id]);
     }
   });
 

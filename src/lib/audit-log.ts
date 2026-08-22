@@ -16,7 +16,14 @@ export type AuditAction =
   | "staff_account_deactivated"
   | "no_show_marked"
   | "no_show_undone"
-  | "strike_waived";
+  | "strike_waived"
+  | "court_added"
+  | "court_renamed"
+  | "court_deactivated"
+  | "court_reactivated"
+  | "opening_hours_changed"
+  | "booking_horizons_changed"
+  | "membership_changed";
 
 // Who acted. Only the id and the name are needed, so any Staff session value
 // fits, and the log keeps the name as it read at the time.
@@ -54,10 +61,45 @@ export interface StrikeAuditDetails {
   playerPhone: string;
 }
 
+// Venue settings are data Staff edit, so each change snapshots the value it
+// left behind next to the one it put there: the entry says what changed, not
+// only that something did. A Court is named rather than referenced, so a later
+// rename cannot rewrite what an older entry says.
+export interface CourtAuditDetails {
+  court: string;
+  previousCourt?: string;
+}
+
+export interface OpeningHoursAuditDetails {
+  weekday: number;
+  // Venue-local whole hours as "06:00-22:00", or null for a closed day.
+  openingHours: string | null;
+  previousOpeningHours: string | null;
+}
+
+export interface HorizonAuditDetails {
+  casualHorizonDays: number;
+  memberHorizonDays: number;
+  previousCasualHorizonDays: number;
+  previousMemberHorizonDays: number;
+}
+
+export interface MembershipAuditDetails {
+  playerName: string;
+  playerPhone: string;
+  // The staff-set last venue date of membership, null for a casual player.
+  memberUntil: string | null;
+  previousMemberUntil: string | null;
+}
+
 export type AuditEntryDetails =
   | BookingAuditDetails
   | StaffAccountAuditDetails
-  | StrikeAuditDetails;
+  | StrikeAuditDetails
+  | CourtAuditDetails
+  | OpeningHoursAuditDetails
+  | HorizonAuditDetails
+  | MembershipAuditDetails;
 
 export interface AuditEntry {
   id: string;
@@ -111,6 +153,26 @@ export type RecordedAction = RecordedActionBase &
     | {
         action: "strike_waived";
         details: StrikeAuditDetails;
+      }
+    | {
+        action:
+          | "court_added"
+          | "court_renamed"
+          | "court_deactivated"
+          | "court_reactivated";
+        details: CourtAuditDetails;
+      }
+    | {
+        action: "opening_hours_changed";
+        details: OpeningHoursAuditDetails;
+      }
+    | {
+        action: "booking_horizons_changed";
+        details: HorizonAuditDetails;
+      }
+    | {
+        action: "membership_changed";
+        details: MembershipAuditDetails;
       }
   );
 
