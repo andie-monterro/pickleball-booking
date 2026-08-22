@@ -9,6 +9,10 @@
 // already follow: a Court holding Bookings cannot be deactivated, and Opening
 // Hours cannot shrink past a Booking that is still to be played. Staff cancel
 // those Bookings explicitly first, so no player's Booking silently disappears.
+// Bookings already played do not stand in the way: they cannot be turned up to,
+// and a venue that could never narrow its hours again would be worse off. The
+// cost is that a past Booking outside the new hours, or on a Court taken out of
+// booking, leaves the desk's grid for that day.
 
 import type { PoolClient, QueryResultRow } from "pg";
 import {
