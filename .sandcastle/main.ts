@@ -47,7 +47,7 @@ const MAX_ITERATIONS = 1;
 // Most tickets one run will start at once. The planner may pick fewer when
 // tickets overlap, never more. Each ticket costs one Opus implementer, so this
 // is the main cost dial in this file.
-const MAX_TICKETS = 3;
+const MAX_TICKETS = 4;
 
 // Ceiling on implementer turns per ticket. The implementer normally stops
 // earlier by emitting <promise>COMPLETE</promise>.
