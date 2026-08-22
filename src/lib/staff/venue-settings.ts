@@ -18,8 +18,15 @@ import {
 } from "@/lib/audit-log";
 import { clock } from "@/lib/clock";
 import { getPool, isUniqueViolation, runInTransaction } from "@/lib/db";
+import { formatHour } from "@/lib/venue-grid";
 
 const MAX_COURT_NAME_LENGTH = 60;
+
+const DAYS_OF_WEEK = [0, 1, 2, 3, 4, 5, 6];
+
+// A horizon longer than a year is a typo, not a policy: the day strip draws one
+// cell per Member day, and nobody plans a pickleball game two years out.
+const MAX_HORIZON_DAYS = 365;
 
 export interface ManagedCourt {
   id: number;
@@ -27,6 +34,24 @@ export interface ManagedCourt {
   // False once Staff took the Court out of booking. It stays on this list, so
   // the desk can bring it back; it is gone from every availability grid.
   active: boolean;
+}
+
+// One venue weekday. Null hours mean the venue is closed that day, so the day
+// has no Slots at all. Opening Hours are whole hours of one day: end 24 is
+// midnight at the end of it, and a day that runs past midnight is not a thing
+// this venue does.
+export interface DayOpeningHours {
+  dayOfWeek: number;
+  startHour: number | null;
+  endHour: number | null;
+}
+
+// How far ahead each standing may book, in whole venue days. A Member always
+// reaches at least as far as a casual player — that is what the membership
+// buys.
+export interface HorizonSettings {
+  casualHorizonDays: number;
+  memberHorizonDays: number;
 }
 
 export class VenueSettingsError extends Error {
@@ -47,6 +72,17 @@ interface CourtRow extends QueryResultRow {
   id: number;
   name: string;
   deactivated_at: Date | null;
+}
+
+interface OpeningHoursRow extends QueryResultRow {
+  day_of_week: number;
+  start_hour: number;
+  end_hour: number;
+}
+
+interface HorizonRow extends QueryResultRow {
+  casual_horizon_days: number;
+  member_horizon_days: number;
 }
 
 interface CountRow extends QueryResultRow {
@@ -219,5 +255,225 @@ async function recordCourtAction(
     subjectPlayerId: null,
     details,
     occurredAt,
+  });
+}
+
+// Every weekday, closed ones included: the panel edits a fixed week, so a day
+// with no hours has to be there to be given some.
+export async function readOpeningHours(): Promise<DayOpeningHours[]> {
+  const result = await getPool().query<OpeningHoursRow>(
+    "select day_of_week, start_hour, end_hour from opening_hours order by day_of_week, start_hour",
+  );
+  const byDay = new Map(result.rows.map((row) => [row.day_of_week, row]));
+  return DAYS_OF_WEEK.map((dayOfWeek) => {
+    const row = byDay.get(dayOfWeek);
+    return {
+      dayOfWeek,
+      startHour: row ? row.start_hour : null,
+      endHour: row ? row.end_hour : null,
+    };
+  });
+}
+
+function parseOpeningHours(input: unknown): DayOpeningHours {
+  const record = requestBodyRecord(input);
+  const { dayOfWeek, startHour, endHour } = record;
+  if (
+    !Number.isInteger(dayOfWeek) ||
+    Number(dayOfWeek) < 0 ||
+    Number(dayOfWeek) > 6
+  ) {
+    throw new VenueSettingsError("invalid_request", 400);
+  }
+  // A closed day is both hours left out; one of the two alone says nothing.
+  if (startHour === null && endHour === null) {
+    return { dayOfWeek: Number(dayOfWeek), startHour: null, endHour: null };
+  }
+  if (
+    !Number.isInteger(startHour) ||
+    !Number.isInteger(endHour) ||
+    Number(startHour) < 0 ||
+    Number(startHour) > 23 ||
+    Number(endHour) < 1 ||
+    Number(endHour) > 24 ||
+    Number(startHour) >= Number(endHour)
+  ) {
+    throw new VenueSettingsError("invalid_request", 400);
+  }
+  return {
+    dayOfWeek: Number(dayOfWeek),
+    startHour: Number(startHour),
+    endHour: Number(endHour),
+  };
+}
+
+function openingHoursLabel(hours: DayOpeningHours): string | null {
+  if (hours.startHour === null || hours.endHour === null) {
+    return null;
+  }
+  return `${formatHour(hours.startHour)}-${formatHour(hours.endHour)}`;
+}
+
+// One weekday at a time: the venue answers "when are you open on a Tuesday?",
+// and the whole day is replaced, so a weekday always has one range or none.
+export async function setOpeningHours(
+  staff: StaffIdentity,
+  rawInput: unknown,
+): Promise<DayOpeningHours> {
+  const hours = parseOpeningHours(rawInput);
+  const now = clock.now();
+
+  return runInTransaction(async (client) => {
+    const existing = await client.query<OpeningHoursRow>(
+      `select day_of_week, start_hour, end_hour
+         from opening_hours
+        where day_of_week = $1
+        order by start_hour
+        for update`,
+      [hours.dayOfWeek],
+    );
+    const previous: DayOpeningHours = existing.rows[0]
+      ? {
+          dayOfWeek: hours.dayOfWeek,
+          startHour: existing.rows[0].start_hour,
+          endHour: existing.rows[0].end_hour,
+        }
+      : { dayOfWeek: hours.dayOfWeek, startHour: null, endHour: null };
+
+    await refuseWhileBookingsFallOutside(client, hours, now);
+    await client.query("delete from opening_hours where day_of_week = $1", [
+      hours.dayOfWeek,
+    ]);
+    if (hours.startHour !== null && hours.endHour !== null) {
+      await client.query(
+        "insert into opening_hours (day_of_week, start_hour, end_hour) values ($1, $2, $3)",
+        [hours.dayOfWeek, hours.startHour, hours.endHour],
+      );
+    }
+
+    await recordStaffAction(client, {
+      staff,
+      action: "opening_hours_changed",
+      bookingId: null,
+      blockId: null,
+      subjectPlayerId: null,
+      details: {
+        weekday: hours.dayOfWeek,
+        openingHours: openingHoursLabel(hours),
+        previousOpeningHours: openingHoursLabel(previous),
+      },
+      occurredAt: now,
+    });
+    return hours;
+  });
+}
+
+// Slots exist only inside Opening Hours, so hours that no longer cover a
+// Booking would take that Booking off every grid while it still stands. The
+// change is refused whole; Staff cancel those Bookings first. Bookings already
+// played do not stand in the way.
+async function refuseWhileBookingsFallOutside(
+  client: PoolClient,
+  hours: DayOpeningHours,
+  now: Date,
+): Promise<void> {
+  const result = await client.query<CountRow>(
+    `select count(*)::integer as booking_count
+       from slot_claims
+       join venue_settings on venue_settings.id = 1
+      where slot_claims.source_kind = 'booking'
+        and slot_claims.slot_starts_at >= $1
+        and extract(
+              dow from slot_claims.slot_starts_at
+                at time zone venue_settings.venue_time_zone
+            ) = $2
+        and ($3::integer is null
+             or extract(
+                  hour from slot_claims.slot_starts_at
+                    at time zone venue_settings.venue_time_zone
+                ) < $3
+             or extract(
+                  hour from slot_claims.slot_starts_at
+                    at time zone venue_settings.venue_time_zone
+                ) >= $4)`,
+    [now, hours.dayOfWeek, hours.startHour, hours.endHour],
+  );
+  if (result.rows[0].booking_count > 0) {
+    throw new VenueSettingsError("bookings_outside_new_hours", 409);
+  }
+}
+
+export async function readHorizonSettings(): Promise<HorizonSettings> {
+  const result = await getPool().query<HorizonRow>(
+    "select casual_horizon_days, member_horizon_days from venue_settings where id = 1",
+  );
+  const row = result.rows[0];
+  if (!row) {
+    throw new Error("Venue settings are not seeded");
+  }
+  return {
+    casualHorizonDays: row.casual_horizon_days,
+    memberHorizonDays: row.member_horizon_days,
+  };
+}
+
+function parseHorizonSettings(input: unknown): HorizonSettings {
+  const { casualHorizonDays, memberHorizonDays } = requestBodyRecord(input);
+  if (
+    !Number.isInteger(casualHorizonDays) ||
+    !Number.isInteger(memberHorizonDays) ||
+    Number(casualHorizonDays) < 1 ||
+    Number(memberHorizonDays) > MAX_HORIZON_DAYS ||
+    Number(memberHorizonDays) < Number(casualHorizonDays)
+  ) {
+    throw new VenueSettingsError("invalid_request", 400);
+  }
+  return {
+    casualHorizonDays: Number(casualHorizonDays),
+    memberHorizonDays: Number(memberHorizonDays),
+  };
+}
+
+// Both horizons move together, because the rule that a Member reaches at least
+// as far as a casual player is about the pair, not about either one.
+export async function setHorizonSettings(
+  staff: StaffIdentity,
+  rawInput: unknown,
+): Promise<HorizonSettings> {
+  const horizons = parseHorizonSettings(rawInput);
+  const now = clock.now();
+
+  return runInTransaction(async (client) => {
+    const previous = await client.query<HorizonRow>(
+      `select casual_horizon_days, member_horizon_days
+         from venue_settings
+        where id = 1
+          for update`,
+    );
+    const row = previous.rows[0];
+    if (!row) {
+      throw new Error("Venue settings are not seeded");
+    }
+    await client.query(
+      `update venue_settings
+          set casual_horizon_days = $1, member_horizon_days = $2
+        where id = 1`,
+      [horizons.casualHorizonDays, horizons.memberHorizonDays],
+    );
+
+    await recordStaffAction(client, {
+      staff,
+      action: "booking_horizons_changed",
+      bookingId: null,
+      blockId: null,
+      subjectPlayerId: null,
+      details: {
+        ...horizons,
+        previousCasualHorizonDays: row.casual_horizon_days,
+        previousMemberHorizonDays: row.member_horizon_days,
+      },
+      occurredAt: now,
+    });
+    return horizons;
   });
 }

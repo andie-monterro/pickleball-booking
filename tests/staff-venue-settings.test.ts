@@ -1,11 +1,14 @@
 import { createHash } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as availabilityRoute from "@/app/api/availability/route";
+import * as bookingsRoute from "@/app/api/bookings/route";
 import * as auditLogRoute from "@/app/api/staff/audit-log/route";
 import * as courtsRoute from "@/app/api/staff/courts/route";
+import * as horizonsRoute from "@/app/api/staff/horizons/route";
+import * as openingHoursRoute from "@/app/api/staff/opening-hours/route";
 import { fixedClock, resetClock, setClock } from "@/lib/clock";
 import { getPool } from "@/lib/db";
-import { httpGet, httpPatch, httpPost } from "./harness/http";
+import { httpGet, httpPatch, httpPost, httpPut } from "./harness/http";
 
 // 2026-08-21 12:00 venue time (Asia/Ho_Chi_Minh, UTC+7). A Friday.
 const NOW = new Date("2026-08-21T05:00:00.000Z");
@@ -121,6 +124,12 @@ async function courtNamesInGrid(date: string): Promise<string[]> {
 // order between them. Each step of a test therefore moves the clock on.
 function atMinute(minute: number): void {
   setClock(fixedClock(new Date(NOW.getTime() + minute * 60 * 1000)));
+}
+
+async function hoursInGrid(date: string): Promise<string[]> {
+  const response = await httpGet(availabilityRoute, `/api/availability?date=${date}`);
+  expect(response.status).toBe(200);
+  return (await response.json()).hours;
 }
 
 async function auditActions(): Promise<string[]> {
@@ -336,6 +345,247 @@ describe("venue settings HTTP API", () => {
 
     // A refused attempt is no action, so nothing changed and nothing is logged.
     expect(await courtNamesInGrid("2026-08-21")).toEqual(SEED_COURTS);
+    expect(await auditActions()).toEqual([]);
+  });
+
+  it("edits one weekday's Opening Hours, and the grid keeps only the Slots inside them", async () => {
+    const listed = await httpGet(
+      openingHoursRoute,
+      "/api/staff/opening-hours",
+      cookieFor(DESK),
+    );
+    expect(listed.status).toBe(200);
+    expect((await listed.json()).openingHours).toEqual(
+      Array.from({ length: 7 }, (_, dayOfWeek) => ({
+        dayOfWeek,
+        startHour: 6,
+        endHour: 22,
+      })),
+    );
+
+    // 2026-08-21 is a Friday; 2026-08-22 is the Saturday after it.
+    atMinute(1);
+    const shortened = await httpPut(
+      openingHoursRoute,
+      "/api/staff/opening-hours",
+      { dayOfWeek: 5, startHour: 8, endHour: 12 },
+      cookieFor(DESK),
+    );
+    expect(shortened.status).toBe(200);
+    expect(await shortened.json()).toEqual({
+      openingHours: { dayOfWeek: 5, startHour: 8, endHour: 12 },
+    });
+
+    expect(await hoursInGrid("2026-08-21")).toEqual([
+      "08:00",
+      "09:00",
+      "10:00",
+      "11:00",
+    ]);
+    // Only that weekday moved.
+    expect(await hoursInGrid("2026-08-22")).toHaveLength(16);
+
+    atMinute(2);
+    const closed = await httpPut(
+      openingHoursRoute,
+      "/api/staff/opening-hours",
+      { dayOfWeek: 5, startHour: null, endHour: null },
+      cookieFor(DESK),
+    );
+    expect(closed.status).toBe(200);
+    expect(await hoursInGrid("2026-08-21")).toEqual([]);
+
+    const response = await httpGet(availabilityRoute, "/api/availability?date=2026-08-21");
+    expect((await response.json()).slots).toEqual([]);
+
+    const log = await httpGet(auditLogRoute, "/api/staff/audit-log", cookieFor(DESK));
+    const { entries } = await log.json();
+    expect(entries).toHaveLength(2);
+    expect(entries[0]).toMatchObject({
+      action: "opening_hours_changed",
+      staff: { id: DESK.playerId, displayName: DESK.displayName },
+      details: {
+        weekday: 5,
+        openingHours: null,
+        previousOpeningHours: "08:00-12:00",
+      },
+    });
+    expect(entries[1]).toMatchObject({
+      action: "opening_hours_changed",
+      details: {
+        weekday: 5,
+        openingHours: "08:00-12:00",
+        previousOpeningHours: "06:00-22:00",
+      },
+    });
+  });
+
+  it("keeps Opening Hours that a Booking still to be played needs", async () => {
+    // A Friday Booking at 20:00 venue time, inside the current hours.
+    await bookCourt("hours-in-use-booking", 1, "2026-08-28T13:00:00.000Z");
+
+    const refused = await httpPut(
+      openingHoursRoute,
+      "/api/staff/opening-hours",
+      { dayOfWeek: 5, startHour: 6, endHour: 18 },
+      cookieFor(DESK),
+    );
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toEqual({ error: "bookings_outside_new_hours" });
+    expect(await hoursInGrid("2026-08-21")).toHaveLength(16);
+
+    // Hours that still cover the Booking are fine.
+    const narrowed = await httpPut(
+      openingHoursRoute,
+      "/api/staff/opening-hours",
+      { dayOfWeek: 5, startHour: 6, endHour: 21 },
+      cookieFor(DESK),
+    );
+    expect(narrowed.status).toBe(200);
+
+    await cancelBookingRecord("hours-in-use-booking");
+    const afterCancelling = await httpPut(
+      openingHoursRoute,
+      "/api/staff/opening-hours",
+      { dayOfWeek: 5, startHour: 6, endHour: 18 },
+      cookieFor(DESK),
+    );
+    expect(afterCancelling.status).toBe(200);
+  });
+
+  it("refuses Opening Hours that are not whole hours of one day", async () => {
+    const refusals = [
+      { dayOfWeek: 5, startHour: 12, endHour: 12 },
+      { dayOfWeek: 5, startHour: 14, endHour: 9 },
+      { dayOfWeek: 5, startHour: 6, endHour: 25 },
+      { dayOfWeek: 5, startHour: -1, endHour: 10 },
+      { dayOfWeek: 5, startHour: 6.5, endHour: 10 },
+      { dayOfWeek: 7, startHour: 6, endHour: 10 },
+      { dayOfWeek: 5, startHour: 6, endHour: null },
+      { startHour: 6, endHour: 10 },
+    ];
+    for (const body of refusals) {
+      const response = await httpPut(
+        openingHoursRoute,
+        "/api/staff/opening-hours",
+        body,
+        cookieFor(DESK),
+      );
+      expect(response.status, JSON.stringify(body)).toBe(400);
+      expect(await response.json()).toEqual({ error: "invalid_request" });
+    }
+
+    const fromPlayer = await httpPut(
+      openingHoursRoute,
+      "/api/staff/opening-hours",
+      { dayOfWeek: 5, startHour: 8, endHour: 12 },
+      cookieFor(PLAYER),
+    );
+    expect(fromPlayer.status).toBe(403);
+    const anonymous = await httpGet(openingHoursRoute, "/api/staff/opening-hours");
+    expect(anonymous.status).toBe(401);
+
+    expect(await hoursInGrid("2026-08-21")).toHaveLength(16);
+    expect(await auditActions()).toEqual([]);
+  });
+
+  it("changes both Booking Horizons, and enforcement and the day strip follow", async () => {
+    const listed = await httpGet(horizonsRoute, "/api/staff/horizons", cookieFor(DESK));
+    expect(listed.status).toBe(200);
+    expect(await listed.json()).toEqual({
+      horizons: { casualHorizonDays: 7, memberHorizonDays: 14 },
+    });
+
+    atMinute(1);
+    const changed = await httpPut(
+      horizonsRoute,
+      "/api/staff/horizons",
+      { casualHorizonDays: 3, memberHorizonDays: 5 },
+      cookieFor(DESK),
+    );
+    expect(changed.status).toBe(200);
+    expect(await changed.json()).toEqual({
+      horizons: { casualHorizonDays: 3, memberHorizonDays: 5 },
+    });
+
+    // The day strip spans the member horizon, and marks the days only Members
+    // reach with the day they open to everyone.
+    const grid = await httpGet(availabilityRoute, "/api/availability", cookieFor(PLAYER));
+    const body = await grid.json();
+    expect(body.horizons).toEqual({ casualDays: 3, memberDays: 5 });
+    expect(body.days).toHaveLength(5);
+    expect(body.days.slice(0, 3).every((day: { memberOnly: boolean }) => !day.memberOnly)).toBe(
+      true,
+    );
+    expect(body.days[3]).toMatchObject({ memberOnly: true, bookable: false });
+
+    // Enforcement follows too: the fourth day is now outside a casual player's
+    // horizon, and it was inside the old one.
+    const refused = await httpPost(
+      bookingsRoute,
+      "/api/bookings",
+      { courtId: 1, startsAt: "2026-08-24T03:00:00.000Z", durationHours: 1 },
+      cookieFor(PLAYER),
+    );
+    expect(refused.status).toBe(400);
+    expect(await refused.json()).toEqual({ error: "outside_horizon" });
+
+    const inside = await httpPost(
+      bookingsRoute,
+      "/api/bookings",
+      { courtId: 1, startsAt: "2026-08-23T03:00:00.000Z", durationHours: 1 },
+      cookieFor(PLAYER),
+    );
+    expect(inside.status).toBe(201);
+
+    const log = await httpGet(auditLogRoute, "/api/staff/audit-log", cookieFor(DESK));
+    const { entries } = await log.json();
+    expect(entries[entries.length - 1]).toMatchObject({
+      action: "booking_horizons_changed",
+      staff: { id: DESK.playerId, displayName: DESK.displayName },
+      details: {
+        casualHorizonDays: 3,
+        memberHorizonDays: 5,
+        previousCasualHorizonDays: 7,
+        previousMemberHorizonDays: 14,
+      },
+    });
+  });
+
+  it("refuses Booking Horizons the app cannot mean", async () => {
+    const refusals = [
+      // A Member must reach at least as far as a casual player.
+      { casualHorizonDays: 10, memberHorizonDays: 7 },
+      { casualHorizonDays: 0, memberHorizonDays: 14 },
+      { casualHorizonDays: -1, memberHorizonDays: 14 },
+      { casualHorizonDays: 7, memberHorizonDays: 400 },
+      { casualHorizonDays: 7.5, memberHorizonDays: 14 },
+      { casualHorizonDays: 7 },
+      { memberHorizonDays: 14 },
+    ];
+    for (const body of refusals) {
+      const response = await httpPut(
+        horizonsRoute,
+        "/api/staff/horizons",
+        body,
+        cookieFor(DESK),
+      );
+      expect(response.status, JSON.stringify(body)).toBe(400);
+      expect(await response.json()).toEqual({ error: "invalid_request" });
+    }
+
+    const fromPlayer = await httpPut(
+      horizonsRoute,
+      "/api/staff/horizons",
+      { casualHorizonDays: 7, memberHorizonDays: 14 },
+      cookieFor(PLAYER),
+    );
+    expect(fromPlayer.status).toBe(403);
+    const anonymous = await httpGet(horizonsRoute, "/api/staff/horizons");
+    expect(anonymous.status).toBe(401);
+
+    const grid = await httpGet(availabilityRoute, "/api/availability");
+    expect((await grid.json()).horizons).toEqual({ casualDays: 7, memberDays: 14 });
     expect(await auditActions()).toEqual([]);
   });
 });
