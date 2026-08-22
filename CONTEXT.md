@@ -5,7 +5,7 @@ Court booking for a single pickleball venue: players see availability and book c
 ## Language
 
 **Court**:
-A bookable playing surface at the venue, identified by name/number only. Courts are interchangeable in quality — no court carries attributes players choose between.
+A bookable playing surface at the venue, identified by name/number only. Courts are interchangeable in quality — no court carries attributes players choose between. Staff add and rename Courts, and take one out of booking when the venue stops using it; a Court is never deleted, because Bookings and Audit Log entries name it. A Court holding Bookings still to be played cannot be taken out of booking until those Bookings are cancelled.
 _Avoid_: Field, lane, resource
 
 **Slot**:
@@ -25,7 +25,7 @@ A person known to the system, identified by exactly one verified phone number. T
 _Avoid_: User, customer, account
 
 **Member**:
-A Player whose Staff-set membership end date ("member until") has not passed. The date is the last venue day of membership: the Player is a Member for the whole of that day, and a casual player from the next venue day. The app only recognizes membership — selling and renewing it happens outside the app.
+A Player whose Staff-set membership end date ("member until") has not passed. Staff set and clear that date at the desk. The date is the last venue day of membership: the Player is a Member for the whole of that day, and a casual player from the next venue day. The app only recognizes membership — selling and renewing it happens outside the app.
 _Avoid_: Subscriber, VIP
 
 **Casual player**:
@@ -44,11 +44,11 @@ A venue-side user with an individual account and full powers: create or cancel a
 _Avoid_: Admin, manager, operator
 
 **Audit Log**:
-The record of Staff actions — who did what, and when — kept so disputes stay resolvable. Every Staff-made creation, cancellation, Block change, No-show mark or undo, and Strike waiver is attributed to an individual Staff account.
+The record of Staff actions — who did what, and when — kept so disputes stay resolvable. Every Staff-made creation, cancellation, Block change, No-show mark or undo, Strike waiver, venue settings change and membership date change is attributed to an individual Staff account.
 _Avoid_: History, activity feed
 
 **Opening Hours**:
-The venue's bookable window, defined per day of week and aligned to whole hours. Slots exist only inside Opening Hours; one-off closures are expressed as Blocks, not hours changes.
+The venue's bookable window, defined per day of week and aligned to whole hours. Slots exist only inside Opening Hours; one-off closures are expressed as Blocks, not hours changes. Staff set one opening and closing hour per weekday, or close the weekday entirely. Hours that would no longer cover a Booking still to be played are refused until that Booking is cancelled.
 _Avoid_: Schedule, business hours
 
 **Booking Horizon**:
