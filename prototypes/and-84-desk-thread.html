@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Staff desk — PROTOTYPE (AND-84)</title>
+<link id="favicon" rel="icon" href="data:,">
+<!--
+  PROTOTYPE — THROWAWAY. Do not ship.
+  Ticket: AND-84 "Prototype the Player's Desk Thread screen and the Staff desk inbox
+          with today's Bookings beside each thread" (map: AND-82).
+  Question: does the Desk Thread feel right on screen, and where does it live —
+            on the Player's phone (at the court, inside Zalo's browser) and on the
+            Staff desk (a desktop tab open all day)?
+  Three structurally different variants in one file, switchable with the bottom bar
+  or ?variant=A|B|C. Both surfaces are on screen at once so one person can play
+  both sides: send as the Player on the left, see the desk react on the right.
+  All data is fake and lives in memory. Reload = reset.
+
+  Why a standalone file and not variants inside the real /  and /staff routes:
+  the repo's earlier prototype (AND-15) was a standalone file the PO could
+  double-click; the question here is mostly the interplay between two surfaces
+  (unread state, sound, "Front desk" signature) which a single page shows better
+  than two browser tabs against a live database.
+
+  Facts respected from docs/research/desk-page-alerts.md (AND-83):
+  - Chrome/Edge allow a sound after ANY click on the page earlier in the session;
+    Firefox/Safari are closer to per-session. So sound is "armed" by the first
+    click on the desk and the desk says so.
+  - The Badging API only works for an installed app, so the unread count goes
+    into document.title and the favicon (drawn here on a canvas).
+  - Background tabs throttle a 10-second poll to ~1 minute on Chrome. The
+    prototype polls nothing (same page) — the spec decides polling vs SSE.
+-->
+<style>
+  :root{
+    --bg:#f4f6f8; --card:#fff; --ink:#101828; --muted:#475467; --line:#d0d5dd; --soft:#f9fafb;
+    --brand:#175cd3; --brand-ink:#fff; --brand-soft:#eff8ff; --brand-line:#b2ddff;
+    --free:#ecfdf3; --taken:#fee4e2; --blocked:#e4e7ec;
+    --unread:#d92d20; --ok:#12b76a; --warn-bg:#fff4ed; --warn-line:#ffd6ae; --warn-ink:#b93815;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding-bottom:84px}
+  button{font:inherit;cursor:pointer}
+  input,textarea{font:inherit}
+  .top{background:var(--card);border-bottom:1px solid #e4e7ec;padding:10px 16px;display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;position:sticky;top:0;z-index:5}
+  .top h1{font-size:16px;margin:0}
+  .top .tag{background:#111827;color:#fff;border-radius:6px;padding:2px 8px;font-size:12px;font-weight:700;letter-spacing:.04em}
+  .top .demo{font-size:13px;color:var(--muted)}
+  .spacer{flex:1}
+  .chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--card);border-radius:999px;padding:6px 12px;font-size:13px}
+  .chip.act{border-color:var(--brand);color:var(--brand);font-weight:700}
+  .stage{display:grid;grid-template-columns:400px minmax(0,1fr);gap:20px;max-width:1500px;margin:0 auto;padding:16px}
+  @media (max-width:1000px){.stage{grid-template-columns:1fr}}
+  .lane h2{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin:0 0 8px;font-weight:700}
+  /* ---- phone frame (Player) ---- */
+  .phone{width:390px;height:780px;border:10px solid #111827;border-radius:36px;background:var(--card);overflow:hidden;position:relative;display:flex;flex-direction:column;margin:0 auto}
+  .phone .zalo{background:#0068ff;color:#fff;font-size:12px;padding:6px 14px;display:flex;justify-content:space-between}
+  .phone .hdr{border-bottom:1px solid #e4e7ec;padding:10px 14px}
+  .phone .hdr b{font-size:17px}
+  .phone .hdr small{display:block;color:var(--muted);font-size:12px}
+  .phone .hdr .row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .phone .body{flex:1;overflow-y:auto;padding:12px 14px;position:relative}
+  .badge{display:inline-flex;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:var(--unread);color:#fff;font-size:11px;font-weight:700;align-items:center;justify-content:center;line-height:1}
+  .pill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:4px 10px;font-size:12px;background:var(--soft)}
+  .strike{background:var(--warn-bg);border-color:var(--warn-line);color:var(--warn-ink);font-weight:700}
+  .days{display:flex;gap:6px;overflow-x:auto;padding-bottom:6px}
+  .day{border:1px solid var(--line);border-radius:10px;padding:6px 10px;font-size:13px;white-space:nowrap}
+  .day.cur{border:2px solid var(--brand)}
+  table.mini{border-collapse:collapse;width:100%;margin-top:8px;font-size:12px}
+  table.mini th,table.mini td{border:1px solid var(--line);padding:6px 4px;text-align:center}
+  table.mini th{background:var(--soft)}
+  td.free{background:var(--free)} td.taken{background:var(--taken)} td.mine{background:#dbeafe;font-weight:700} td.blocked{background:var(--blocked)}
+  .card{border:1px solid var(--line);border-radius:12px;padding:12px;margin:12px 0;background:var(--card)}
+  .card h3{margin:0 0 6px;font-size:15px}
+  .muted{color:var(--muted);font-size:13px}
+  .tabbar{border-top:1px solid #e4e7ec;display:flex;background:var(--card)}
+  .tabbar button{flex:1;border:0;background:none;padding:10px 4px 12px;font-size:12px;color:var(--muted);display:grid;gap:2px;justify-items:center;position:relative}
+  .tabbar button.on{color:var(--brand);font-weight:700}
+  .tabbar .ic{font-size:20px}
+  .tabbar .badge{position:absolute;top:6px;left:calc(50% + 8px)}
+  .btn{border:1px solid var(--line);background:var(--card);border-radius:10px;padding:10px 14px;font-weight:700}
+  .btn.primary{background:var(--brand);border-color:var(--brand);color:var(--brand-ink)}
+  .btn.sm{padding:6px 10px;font-size:13px}
+  .btn:disabled{opacity:.5;cursor:default}
+  .fab{position:absolute;right:14px;bottom:16px;background:var(--brand);color:#fff;border:0;border-radius:999px;padding:12px 16px;font-weight:700;box-shadow:0 8px 20px rgba(16,24,40,.25);display:flex;gap:8px;align-items:center}
+  .fab .badge{background:#fff;color:var(--unread)}
+  /* thread (shared look) */
+  .thread{display:flex;flex-direction:column;height:100%}
+  .thread .note{background:var(--brand-soft);border:1px solid var(--brand-line);border-radius:10px;padding:8px 10px;font-size:12.5px;margin-bottom:8px}
+  .msgs{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:4px 0}
+  .msg{max-width:82%;border-radius:14px;padding:8px 12px;font-size:14px}
+  .msg .who{display:block;font-size:11px;color:var(--muted);margin-bottom:2px;font-weight:700}
+  .msg .at{display:block;font-size:11px;color:var(--muted);margin-top:3px;text-align:right}
+  .msg.player{align-self:flex-end;background:#dbeafe;border-bottom-right-radius:4px}
+  .msg.desk{align-self:flex-start;background:var(--soft);border:1px solid var(--line);border-bottom-left-radius:4px}
+  .msg.sys{align-self:center;background:none;color:var(--muted);font-size:12px}
+  .compose{display:flex;gap:8px;padding-top:8px;border-top:1px solid #e4e7ec;margin-top:8px}
+  .compose input{flex:1;border:1px solid var(--line);border-radius:10px;padding:10px 12px;min-width:0}
+  .compose button{border:0;background:var(--brand);color:#fff;border-radius:10px;padding:10px 14px;font-weight:700}
+  .sheet{position:absolute;left:0;right:0;bottom:0;top:120px;background:var(--card);border-radius:18px 18px 0 0;box-shadow:0 -12px 30px rgba(16,24,40,.25);padding:12px 14px;display:flex;flex-direction:column}
+  .sheet .grab{width:44px;height:4px;border-radius:2px;background:var(--line);margin:0 auto 8px}
+  .sheet .shdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+  .sheet .shdr b{font-size:16px}
+  .empty{color:var(--muted);text-align:center;padding:30px 10px;font-size:14px}
+  /* ---- desk frame (Staff) ---- */
+  .desk{border:1px solid var(--line);border-radius:14px;background:var(--card);overflow:hidden;min-height:780px;display:flex;flex-direction:column}
+  .tabstrip{background:#dee1e6;padding:8px 10px 0;display:flex;gap:6px;font-size:12.5px}
+  .tabstrip .tab{background:#fff;border-radius:8px 8px 0 0;padding:7px 12px;display:flex;gap:8px;align-items:center;min-width:220px}
+  .tabstrip .tab.bg{background:#eef0f3;color:var(--muted)}
+  .tabstrip .fav{width:14px;height:14px;border-radius:3px;background:var(--brand);position:relative;flex:0 0 auto}
+  .tabstrip .fav.n::after{content:attr(data-n);position:absolute;right:-6px;top:-6px;background:var(--unread);color:#fff;border-radius:999px;font-size:9px;min-width:13px;height:13px;display:flex;align-items:center;justify-content:center;padding:0 3px;font-weight:700}
+  .urlbar{background:#fff;border-bottom:1px solid #e4e7ec;padding:6px 12px;font-size:12px;color:var(--muted)}
+  .apphdr{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 18px;border-bottom:1px solid #e4e7ec}
+  .apphdr b{font-size:18px}
+  .apphdr small{display:block;color:var(--muted);font-size:12px}
+  .apphdr .right{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+  .sound{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:6px 12px;font-size:13px;background:var(--soft)}
+  .sound.off{border-color:var(--warn-line);background:var(--warn-bg);color:var(--warn-ink)}
+  .sound.on{border-color:#a6f4c5;background:var(--free);color:#027a48}
+  .deskbody{flex:1;padding:16px 18px;position:relative;min-height:0;display:flex;flex-direction:column}
+  .segnav{display:flex;gap:6px;margin-bottom:14px}
+  .segnav button{border:1px solid var(--line);background:var(--card);border-radius:10px;padding:8px 14px;font-weight:700;display:flex;gap:8px;align-items:center}
+  .segnav button.on{border:2px solid var(--brand);color:var(--brand)}
+  .inbox{display:grid;grid-template-columns:320px minmax(0,1fr);gap:16px;flex:1;min-height:0}
+  @media (max-width:1200px){.inbox{grid-template-columns:1fr}}
+  .list{border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;min-height:0}
+  .list .search{padding:10px;border-bottom:1px solid #e4e7ec;display:flex;gap:6px}
+  .list .search input{flex:1;border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:0}
+  .list .grp{background:var(--soft);color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.08em;font-weight:700;padding:6px 12px;border-bottom:1px solid #e4e7ec}
+  .row{display:grid;grid-template-columns:12px minmax(0,1fr) auto;gap:10px;align-items:start;padding:10px 12px;border-bottom:1px solid #e4e7ec;background:var(--card);border-left:0;text-align:left;width:100%;border-top:0;border-right:0}
+  .row:hover{background:var(--soft)}
+  .row.sel{background:var(--brand-soft)}
+  .row .dot{width:10px;height:10px;border-radius:50%;margin-top:6px;background:transparent}
+  .row.unread .dot{background:var(--unread)}
+  .row .name{font-weight:700;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .row.unread .name{color:var(--ink)}
+  .row .prev{color:var(--muted);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+  .row .when{font-size:12px;color:var(--muted);white-space:nowrap}
+  .where{display:inline-flex;gap:6px;align-items:center;border:1px solid var(--brand-line);background:var(--brand-soft);color:#175cd3;border-radius:6px;padding:1px 7px;font-size:12px;font-weight:700;white-space:nowrap}
+  .where.now{border-color:#a6f4c5;background:var(--free);color:#027a48}
+  .where.none{border-color:var(--line);background:var(--soft);color:var(--muted);font-weight:500}
+  .pane{border:1px solid var(--line);border-radius:12px;padding:14px;display:flex;flex-direction:column;min-height:0}
+  .pane .ph{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;border-bottom:1px solid #e4e7ec;padding-bottom:10px;margin-bottom:8px}
+  .pane .ph b{font-size:17px}
+  .today{border:1px solid var(--line);border-radius:10px;padding:8px 12px;background:var(--soft);font-size:13px;min-width:220px}
+  .today .lbl{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.08em;font-weight:700}
+  .today .bk{display:flex;justify-content:space-between;gap:10px;padding:3px 0}
+  .drawer{position:absolute;top:0;right:0;bottom:0;width:min(560px,100%);background:var(--card);border-left:1px solid var(--line);box-shadow:-16px 0 40px rgba(16,24,40,.2);padding:14px;display:flex;flex-direction:column;z-index:3}
+  .drawer .dh{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+  .drawer .dh b{font-size:17px}
+  table.sched{border-collapse:collapse;width:100%;font-size:13px}
+  table.sched th,table.sched td{border:1px solid var(--line);padding:0;text-align:center;height:44px}
+  table.sched th{background:var(--soft);padding:8px}
+  table.sched td button{width:100%;height:100%;border:0;background:transparent;display:grid;gap:2px;padding:4px}
+  table.sched td button small{color:var(--muted);font-size:11px}
+  .panel{border:1px solid var(--line);border-radius:14px;padding:14px;margin-top:12px;box-shadow:0 12px 30px rgba(16,24,40,.15);display:flex;justify-content:space-between;gap:16px;align-items:flex-start;background:var(--card)}
+  .eyebrow{color:var(--brand);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;margin:0 0 4px}
+  .actions{display:flex;gap:8px;flex-wrap:wrap}
+  .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:84px;background:#111827;color:#fff;padding:10px 16px;border-radius:999px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:30}
+  /* variant switcher (prototype chrome, not part of the design) */
+  #switcher{position:fixed;left:50%;transform:translateX(-50%);bottom:12px;z-index:25;background:#111827;color:#fff;border-radius:999px;display:flex;align-items:center;gap:4px;padding:6px 8px;box-shadow:0 8px 24px rgba(0,0,0,.35);font-size:13px}
+  #switcher button{background:none;border:0;color:#fff;font-size:16px;padding:4px 10px}
+  #switcher .lbl{min-width:260px;text-align:center}
+</style>
+</head>
+<body>
+<div class="top" id="topbar"></div>
+<div class="stage">
+  <section class="lane"><h2>Player — phone, inside Zalo's browser</h2><div class="phone" id="phone"></div></section>
+  <section class="lane"><h2>Staff desk — desktop browser tab, open all day</h2><div class="desk" id="desk"></div></section>
+</div>
+<div class="toast" id="toast"></div>
+<div id="switcher"></div>
+
+<script>
+"use strict";
+/* ---------- fake data (all fabricated) ---------- */
+const VARIANTS={
+  A:"Tabs — Messages tab on the phone, Inbox tab on the desk",
+  B:"Overlays — floating button on the phone, drawer over the schedule",
+  C:"Anchored — report from a Booking, inbox grouped by who is at the court",
+};
+const NOW_H=14, NOW_M=5; // venue time is frozen at 14:05 so "at the court" is easy to see
+const COURTS=["Court 1","Court 2","Court 3","Court 4"];
+const HOURS=[13,14,15,16,17];
+const ME="p1"; // the phone belongs to Linh
+const STAFF=["Hà","Tuấn"];
+const PLAYERS=[
+  {id:"p1",name:"Linh Trần",phone:"+84901234567",strikes:0,today:[{court:"Court 3",s:14,e:15}]},
+  {id:"p2",name:"Minh Lê",phone:"+84912345678",strikes:1,today:[{court:"Court 1",s:13,e:15}]},
+  {id:"p3",name:"Bảo Phạm",phone:"+84987654321",strikes:0,today:[]},
+  {id:"p4",name:"An Nguyễn",phone:"+84933221100",strikes:0,today:[{court:"Court 2",s:16,e:17}]},
+  {id:"p5",name:"Hương Võ",phone:"+84977001122",strikes:0,today:[]},
+];
+function seed(){
+  return {
+    p1:{deskUnread:false,playerUnread:false,msgs:[
+      {from:"player",text:"Hi, can I bring my own net? Ours is loose.",at:"Yesterday 18:10"},
+      {from:"desk",staff:"Hà",text:"Yes, that is fine. We will also fix the net before your Booking today.",at:"Yesterday 18:14"},
+    ]},
+    p2:{deskUnread:true,playerUnread:false,msgs:[
+      {from:"player",text:"The net on Court 1 is still loose, can someone come?",at:"Today 13:58"},
+    ]},
+    p5:{deskUnread:false,playerUnread:false,msgs:[
+      {from:"desk",staff:"Tuấn",text:"Your Booking on Sunday was cancelled because the roof leaked. Please rebook, sorry.",at:"Sat 09:20"},
+      {from:"player",text:"Ok, thanks for telling me.",at:"Sat 09:41"},
+    ]},
+  };
+}
+const state={
+  variant:(new URLSearchParams(location.search).get("variant")||"A").toUpperCase(),
+  threads:seed(),
+  staff:STAFF[0],
+  soundArmed:false,
+  // per-surface UI state
+  phoneTab:"book", phoneSheet:false, phoneThreadOpen:false, prefill:"",
+  deskTab:"schedule", deskDrawer:false, deskSel:null, deskSearch:"", deskWriteFirst:false, deskPicked:null,
+  tick:0,
+};
+if(!VARIANTS[state.variant])state.variant="A";
+const $=(s)=>document.querySelector(s);
+const esc=(s)=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const pad=(n)=>String(n).padStart(2,"0");
+const nowLabel=()=>`Today ${pad(NOW_H)}:${pad(NOW_M+state.tick)}`;
+const player=(id)=>PLAYERS.find(p=>p.id===id);
+const thread=(id)=>state.threads[id]||(state.threads[id]={deskUnread:false,playerUnread:false,msgs:[]});
+const deskUnreadCount=()=>Object.values(state.threads).filter(t=>t.deskUnread).length;
+const lastMsg=(t)=>t.msgs[t.msgs.length-1];
+function atCourtNow(p){return p.today.find(b=>b.s<=NOW_H&&NOW_H<b.e)}
+function laterToday(p){return p.today.find(b=>b.s>NOW_H)}
+function whereChip(p){
+  const now=atCourtNow(p); if(now)return `<span class="where now">● ${esc(now.court)} · ${pad(now.s)}:00–${pad(now.e)}:00 now</span>`;
+  const later=laterToday(p); if(later)return `<span class="where">${esc(later.court)} · ${pad(later.s)}:00–${pad(later.e)}:00 today</span>`;
+  return `<span class="where none">no Booking today</span>`;
+}
+function toast(t){const el=$("#toast");el.textContent=t;el.style.opacity=1;clearTimeout(el._t);el._t=setTimeout(()=>el.style.opacity=0,1800)}
+
+/* ---------- sound + title badge (the real browser behaviour) ---------- */
+let audioCtx=null;
+function armSound(){
+  if(state.soundArmed)return;
+  try{audioCtx=new (window.AudioContext||window.webkitAudioContext)();audioCtx.resume();state.soundArmed=true;toast("Sound alerts are on for this tab (armed by your click).");render()}catch(e){}
+}
+function beep(){
+  if(!state.soundArmed||!audioCtx)return;
+  const play=(t0,f)=>{const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type="sine";o.frequency.value=f;g.gain.setValueAtTime(0.0001,t0);g.gain.exponentialRampToValueAtTime(0.25,t0+0.02);g.gain.exponentialRampToValueAtTime(0.0001,t0+0.18);o.connect(g).connect(audioCtx.destination);o.start(t0);o.stop(t0+0.2)};
+  const t=audioCtx.currentTime;play(t,880);play(t+0.22,1175);
+}
+function updateTitle(){
+  const n=deskUnreadCount();
+  document.title=(n?`(${n}) `:"")+"Staff desk — PROTOTYPE (AND-84)";
+  const c=document.createElement("canvas");c.width=c.height=32;const x=c.getContext("2d");
+  x.fillStyle="#175cd3";x.beginPath();x.roundRect(0,0,32,32,7);x.fill();
+  if(n){x.fillStyle="#d92d20";x.beginPath();x.arc(23,9,9,0,7);x.fill();x.fillStyle="#fff";x.font="bold 13px system-ui";x.textAlign="center";x.textBaseline="middle";x.fillText(String(n),23,10)}
+  $("#favicon").href=c.toDataURL("image/png");
+}
+
+/* ---------- actions ---------- */
+function playerSend(text){
+  text=text.trim(); if(!text)return;
+  const t=thread(ME); t.msgs.push({from:"player",text,at:nowLabel()}); t.deskUnread=true; state.tick++; state.prefill="";
+  beep(); toast("Sent. The desk badge and the sound fire on the right."); render();
+}
+function deskOpen(id){
+  state.deskSel=id; state.deskWriteFirst=false; state.deskPicked=null;
+  const t=state.threads[id]; if(t&&t.deskUnread){t.deskUnread=false}
+  render();
+}
+function deskSend(text){
+  text=text.trim(); if(!text||!state.deskSel)return;
+  const t=thread(state.deskSel); t.msgs.push({from:"desk",staff:state.staff,text,at:nowLabel()}); t.playerUnread=true; t.deskUnread=false; state.tick++;
+  render();
+}
+function playerOpenThread(){const t=thread(ME);t.playerUnread=false}
+function simulateOther(){
+  const t=thread("p4"); t.msgs.push({from:"player",text:"Hello, is Court 2 still free after my 16:00 Booking? Want to add an hour.",at:nowLabel()}); t.deskUnread=true; state.tick++;
+  beep(); toast("An Nguyễn (another Player) just wrote. Watch the desk."); render();
+}
+function reset(){Object.assign(state,{threads:seed(),tick:0,deskSel:null,deskDrawer:false,phoneSheet:false,phoneThreadOpen:false,prefill:"",deskWriteFirst:false,deskPicked:null,deskSearch:""});render()}
+function cycle(dir){const k=Object.keys(VARIANTS);state.variant=k[(k.indexOf(state.variant)+dir+k.length)%k.length];try{history.replaceState(null,"","?variant="+state.variant)}catch(e){}Object.assign(state,{deskSel:null,deskDrawer:false,phoneSheet:false,phoneThreadOpen:false,deskWriteFirst:false,deskPicked:null});render()}
+window.addEventListener("keydown",(e)=>{const t=e.target.tagName;if(t==="INPUT"||t==="TEXTAREA"||e.target.isContentEditable)return;if(e.key==="ArrowLeft")cycle(-1);if(e.key==="ArrowRight")cycle(1)});
+
+/* ---------- shared pieces ---------- */
+function threadHtml(id,side,opts={}){
+  const t=thread(id); const p=player(id);
+  const msgs=t.msgs.length?t.msgs.map(m=>{
+    const who=m.from==="desk"?(side==="desk"?`Front desk · ${esc(m.staff)}`:"Front desk"):(side==="desk"?esc(p.name):"You");
+    return `<div class="msg ${m.from}"><span class="who">${who}</span>${esc(m.text)}<span class="at">${esc(m.at)}</span></div>`;
+  }).join(""):`<div class="empty">${side==="desk"?"No messages yet. Write first if the desk needs to reach this Player.":"No messages yet. Write to the front desk — for example, a problem on your court."}</div>`;
+  const note=side==="player"?`<div class="note">The front desk replies during Opening Hours (06:00–22:00). A message sent outside those hours waits here.</div>`:"";
+  const ph=side==="player"?"Message the front desk…":`Reply as Front desk (signed by you, ${esc(state.staff)}, internally)…`;
+  const fn=side==="player"?"playerSend":"deskSend";
+  const val=side==="player"?esc(state.prefill):"";
+  return `<div class="thread">${note}<div class="msgs" id="msgs-${side}">${msgs}</div>
+    <form class="compose" onsubmit="event.preventDefault();${fn}(this.q.value);this.q.value=''"><input name="q" autocomplete="off" placeholder="${ph}" value="${val}"><button type="submit">Send</button></form></div>`;
+}
+function scrollMsgs(){document.querySelectorAll(".msgs").forEach(el=>el.scrollTop=el.scrollHeight)}
+function todayBox(p){
+  const bks=p.today.length?p.today.map(b=>`<div class="bk"><b>${esc(b.court)}</b><span>${pad(b.s)}:00–${pad(b.e)}:00 ${atCourtNow(p)===b?"· on court now":""}</span></div>`).join(""):`<div class="muted">No Booking today.</div>`;
+  return `<div class="today"><div class="lbl">Today's Bookings</div>${bks}</div>`;
+}
+function phoneHome(extra=""){
+  const me=player(ME);
+  return `<div class="days"><div class="day cur">2026-09-08</div><div class="day">2026-09-09</div><div class="day">2026-09-10</div><div class="day">2026-09-11</div></div>
+    <table class="mini"><tr><th>Time</th>${COURTS.map(c=>`<th>${c.slice(6)}</th>`).join("")}</tr>
+    ${HOURS.map(h=>`<tr><th>${pad(h)}:00</th>${COURTS.map((c,i)=>{const mine=me.today.find(b=>b.court===c&&b.s<=h&&h<b.e);const cls=mine?"mine":((h+i)%3===0?"taken":(h===16&&i===3?"blocked":"free"));return `<td class="${cls}">${mine?"Yours":cls==="free"?"Free":cls==="taken"?"Taken":"Blocked"}</td>`}).join("")}</tr>`).join("")}</table>
+    <section class="card"><h3>My upcoming Bookings</h3>${me.today.map(b=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><div><b>${esc(b.court)}</b><br><span class="muted">Today, ${pad(b.s)}:00–${pad(b.e)}:00</span></div><div class="actions">${extra?extra(b):""}<button class="btn sm">Cancel Booking</button></div></div>`).join("")}</section>`;
+}
+function phoneHeader(rightHtml=""){
+  const me=player(ME);
+  return `<div class="zalo"><span>◀ Zalo</span><span>pickleball.example.vn</span><span>⋯</span></div>
+    <div class="hdr"><div class="row"><div><b>Pickleball Booking</b><small>Venue time ${pad(NOW_H)}:${pad(NOW_M+state.tick)}</small></div><div style="display:flex;gap:6px;align-items:center">${rightHtml}<span class="pill strike">${me.strikes} Strikes</span><span class="pill">${esc(me.name.split(" ")[0])}</span></div></div></div>`;
+}
+function deskChrome(inner,tabLabel){
+  const n=deskUnreadCount();
+  return `<div class="tabstrip"><div class="tab"><span class="fav ${n?"n":""}" data-n="${n}"></span><span>${n?`(${n}) `:""}Staff desk — Pickleball Booking</span></div><div class="tab bg"><span class="fav" style="background:#0068ff"></span>Zalo Web</div><div class="tab bg"><span class="fav" style="background:#34a853"></span>Sheets — Doanh thu T9</div></div>
+    <div class="urlbar">pickleball.example.vn/staff${tabLabel||""}</div>
+    <div class="apphdr"><div><b>Staff desk</b><small>Signed in as ${esc(state.staff)}. Venue time ${pad(NOW_H)}:${pad(NOW_M+state.tick)}.</small></div>
+      <div class="right"><label class="pill">Staff account <select onchange="state.staff=this.value;render()" style="border:0;background:none;font:inherit">${STAFF.map(s=>`<option ${s===state.staff?"selected":""}>${s}</option>`).join("")}</select></label>
+      <span class="sound ${state.soundArmed?"on":"off"}">${state.soundArmed?"🔔 Sound alerts on":"🔕 Sound off — click anywhere on the desk to turn it on"}</span></div></div>
+    <div class="deskbody">${inner}</div>`;
+}
+function schedTable(onPick){
+  return `<table class="sched"><tr><th>Time</th>${COURTS.map(c=>`<th>${c}</th>`).join("")}</tr>
+  ${HOURS.map(h=>`<tr><th>${pad(h)}:00</th>${COURTS.map((c,i)=>{const bk=PLAYERS.find(p=>p.today.find(b=>b.court===c&&b.s<=h&&h<b.e));if(bk){return `<td class="taken"><button onclick="${onPick?`pickBooking('${bk.id}')`:""}"><b>${esc(bk.name)}</b><small>${esc(bk.phone)}</small></button></td>`}const cls=(h+i)%4===0?"blocked":"free";return `<td class="${cls}">${cls==="free"?"Free":"Blocked"}</td>`}).join("")}</tr>`).join("")}</table>`;
+}
+function pickBooking(id){state.deskPicked=id;state.deskSel=null;render()}
+function inboxList(rows,{search=true,grouped=false}={}){
+  const q=state.deskSearch.toLowerCase();
+  const matches=PLAYERS.filter(p=>q&&(p.name.toLowerCase().includes(q)||p.phone.includes(q)));
+  const searchHtml=search?`<div class="search"><input placeholder="Find a Player by name or phone to write first…" value="${esc(state.deskSearch)}" oninput="state.deskSearch=this.value;render();this.focus();this.setSelectionRange(this.value.length,this.value.length)"></div>${q?matches.map(p=>`<button class="row" onclick="state.deskSearch='';deskOpen('${p.id}')"><span class="dot"></span><span><span class="name">${esc(p.name)} ${whereChip(p)}</span><span class="prev">${state.threads[p.id]?"Open their Desk Thread":"No thread yet — your message starts it"}</span></span><span class="when">${esc(p.phone)}</span></button>`).join("")||`<div class="empty">No Player matches.</div>`:""}`:"";
+  const rowHtml=(p)=>{const t=state.threads[p.id];const m=lastMsg(t);return `<button class="row ${t.deskUnread?"unread":""} ${state.deskSel===p.id?"sel":""}" onclick="deskOpen('${p.id}')"><span class="dot"></span><span style="min-width:0"><span class="name">${esc(p.name)} ${whereChip(p)}</span><span class="prev">${m.from==="desk"?"Front desk: ":""}${esc(m.text)}</span></span><span class="when">${esc(m.at.replace("Today ",""))}</span></button>`};
+  let body="";
+  if(!q){
+    if(grouped){
+      const ids=Object.keys(state.threads);const withT=PLAYERS.filter(p=>ids.includes(p.id));
+      const g1=withT.filter(atCourtNow),g2=withT.filter(p=>!atCourtNow(p)&&laterToday(p)),g3=withT.filter(p=>!p.today.length);
+      const sortU=(a)=>a.sort((x,y)=>Number(state.threads[y.id].deskUnread)-Number(state.threads[x.id].deskUnread));
+      body=[["At the court now",sortU(g1)],["Booked later today",sortU(g2)],["No Booking today",sortU(g3)]].map(([l,a])=>a.length?`<div class="grp">${l}</div>${a.map(rowHtml).join("")}`:"").join("");
+    }else{
+      const ordered=PLAYERS.filter(p=>state.threads[p.id]).sort((a,b)=>Number(state.threads[b.id].deskUnread)-Number(state.threads[a.id].deskUnread));
+      body=ordered.map(rowHtml).join("");
+    }
+  }
+  return `<div class="list">${searchHtml}<div style="overflow-y:auto">${body}</div></div>`;
+}
+function deskPane(){
+  if(!state.deskSel)return `<div class="pane"><div class="empty">Pick a thread on the left, or find a Player to write first.<br><br>Unread is shared: once any Staff opens a thread, it is read for the whole desk. The badge is the handoff between shifts.</div></div>`;
+  const p=player(state.deskSel);
+  return `<div class="pane"><div class="ph"><div><b>${esc(p.name)}</b><div class="muted">${esc(p.phone)} · ${p.strikes} Strikes · Desk Thread since ${state.threads[p.id].msgs.length?"yesterday":"now"}</div></div>${todayBox(p)}</div>${threadHtml(p.id,"desk")}</div>`;
+}
+
+/* ---------- variant A: tabs ---------- */
+function renderA(){
+  const t=thread(ME);
+  let body,tabs;
+  if(state.phoneTab==="msgs"){playerOpenThread();body=`<div style="height:100%">${threadHtml(ME,"player")}</div>`}
+  else body=phoneHome();
+  tabs=`<div class="tabbar"><button class="${state.phoneTab==="book"?"on":""}" onclick="state.phoneTab='book';render()"><span class="ic">▦</span>Book</button><button class="${state.phoneTab==="msgs"?"on":""}" onclick="state.phoneTab='msgs';render()"><span class="ic">✉</span>Front desk${t.playerUnread?`<span class="badge">1</span>`:""}</button></div>`;
+  $("#phone").innerHTML=phoneHeader()+`<div class="body">${body}</div>`+tabs;
+
+  const n=deskUnreadCount();
+  const nav=`<div class="segnav"><button class="${state.deskTab==="schedule"?"on":""}" onclick="state.deskTab='schedule';render()">Schedule</button><button class="${state.deskTab==="inbox"?"on":""}" onclick="state.deskTab='inbox';render()">Inbox ${n?`<span class="badge">${n}</span>`:""}</button><button>Strikes</button><button>Memberships</button><button>Venue settings</button></div>`;
+  const inner=state.deskTab==="inbox"?`<div class="inbox">${inboxList()}${deskPane()}</div>`:`<p class="muted" style="margin:0 0 10px">The schedule as it is today. New: the Inbox tab above carries the unread badge.</p>${schedTable(false)}`;
+  $("#desk").innerHTML=deskChrome(nav+inner,state.deskTab==="inbox"?"/inbox":"");
+}
+
+/* ---------- variant B: overlays ---------- */
+function renderB(){
+  const t=thread(ME);
+  let body=phoneHome();
+  if(state.phoneSheet){playerOpenThread();body+=`<div class="sheet"><div class="grab"></div><div class="shdr"><b>Front desk</b><button class="btn sm" onclick="state.phoneSheet=false;render()">Close</button></div>${threadHtml(ME,"player")}</div>`}
+  else body+=`<button class="fab" onclick="state.phoneSheet=true;render()">✉ Message the desk ${t.playerUnread?`<span class="badge">1</span>`:""}</button>`;
+  $("#phone").innerHTML=phoneHeader()+`<div class="body">${body}</div>`;
+
+  const n=deskUnreadCount();
+  const btn=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:12px"><p class="muted" style="margin:0">The schedule stays the whole desk. The inbox opens over it and closes again.</p><button class="btn ${n?"primary":""}" onclick="state.deskDrawer=!state.deskDrawer;render()">✉ Inbox ${n?`<span class="badge" style="background:#fff;color:var(--unread)">${n}</span>`:""}</button></div>`;
+  const drawer=state.deskDrawer?`<div class="drawer"><div class="dh"><b>Desk inbox</b><button class="btn sm" onclick="state.deskDrawer=false;render()">Close</button></div>${state.deskSel?`<button class="btn sm" style="align-self:flex-start;margin-bottom:8px" onclick="state.deskSel=null;render()">◀ All threads</button>${deskPane()}`:inboxList()}</div>`:"";
+  $("#desk").innerHTML=deskChrome(btn+schedTable(false)+drawer,"");
+}
+
+/* ---------- variant C: anchored to Bookings ---------- */
+function renderC(){
+  const t=thread(ME);
+  let body;
+  if(state.phoneThreadOpen){playerOpenThread();body=`<button class="btn sm" style="margin-bottom:8px" onclick="state.phoneThreadOpen=false;render()">◀ Back</button><div style="height:calc(100% - 44px)">${threadHtml(ME,"player")}</div>`}
+  else body=phoneHome((b)=>`<button class="btn sm primary" onclick="state.prefill='${esc(b.court)}, ${pad(b.s)}:00–${pad(b.e)}:00: ';state.phoneThreadOpen=true;render()">Report a problem</button>`);
+  const link=`<button class="pill" style="cursor:pointer" onclick="state.phoneThreadOpen=true;render()">✉ Front desk ${t.playerUnread?`<span class="badge">1</span>`:""}</button>`;
+  $("#phone").innerHTML=phoneHeader(link)+`<div class="body">${body}</div>`;
+
+  const n=deskUnreadCount();
+  const nav=`<div class="segnav"><button class="${state.deskTab==="schedule"?"on":""}" onclick="state.deskTab='schedule';render()">Schedule</button><button class="${state.deskTab==="inbox"?"on":""}" onclick="state.deskTab='inbox';render()">Inbox ${n?`<span class="badge">${n}</span>`:""}</button></div>`;
+  let inner;
+  if(state.deskTab==="inbox"){inner=`<div class="inbox">${inboxList([],{search:false,grouped:true})}${deskPane()}</div>`}
+  else{
+    const picked=state.deskPicked?player(state.deskPicked):null;
+    inner=`<p class="muted" style="margin:0 0 10px">Click a Booking to manage it — the panel gains "Message the Booker", which is how the desk writes first.</p>${schedTable(true)}`+
+      (picked?`<div class="panel"><div><p class="eyebrow">Manage this Booking</p><b style="font-size:17px">${esc(picked.name)}</b><div class="muted">${esc(picked.phone)} · ${whereChip(picked)}</div><p class="muted" style="margin:8px 0 0">A staff cancellation is penalty-free at any time.</p></div><div class="actions"><button class="btn" onclick="state.deskPicked=null;render()">Close</button><button class="btn">Mark No-show</button><button class="btn" onclick="state.deskTab='inbox';deskOpen('${picked.id}')">✉ Message the Booker</button><button class="btn primary">Cancel Booking</button></div></div>`:"")+
+      (state.deskSel?`<div class="panel" style="display:block"><p class="eyebrow">Desk Thread</p>${deskPane()}</div>`:"");
+  }
+  $("#desk").innerHTML=deskChrome(nav+inner,state.deskTab==="inbox"?"/inbox":"");
+}
+
+/* ---------- render ---------- */
+function render(){
+  $("#topbar").innerHTML=`<span class="tag">PROTOTYPE</span><h1>Desk Thread — Player ↔ front desk</h1><span class="demo">Fake data, in memory. Left: Linh's phone, on Court 3 right now. Right: the Staff desk.</span><span class="spacer"></span>
+    <button class="chip" onclick="simulateOther()">▶ Another Player writes to the desk</button><button class="chip" onclick="reset()">↺ Reset</button>`;
+  ({A:renderA,B:renderB,C:renderC})[state.variant]();
+  $("#switcher").innerHTML=`<button onclick="cycle(-1)" aria-label="previous variant">◀</button><span class="lbl">${state.variant} — ${esc(VARIANTS[state.variant])}</span><button onclick="cycle(1)" aria-label="next variant">▶</button>`;
+  updateTitle(); scrollMsgs();
+}
+// Any click on the desk arms sound — this is what Chrome/Edge actually require (AND-83).
+$("#desk").addEventListener("pointerdown",armSound);
+render();
+</script>
+</body>
+</html>
