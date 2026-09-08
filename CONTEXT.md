@@ -76,7 +76,7 @@ _Avoid_: Closure, hold, maintenance booking
 A player booking in person or by phone at the front desk. Results in an ordinary Booking created by staff — not a separate concept. Its Booker is a Player; Staff create a light Player record (name + phone) at the desk if none exists.
 
 **Staff**:
-A venue-side user with an individual account and full powers: create or cancel any Booking (at any time, penalty-free), place Blocks, change venue settings, and manage Staff accounts. A single role — there is no separate admin. Staff Bookings follow the same Booking rules as player Bookings.
+A venue-side user with an individual account and full powers: create or cancel any Booking (at any time, penalty-free), place Blocks, change venue settings, manage Staff accounts, and answer the Desk Inbox. A single role — there is no separate admin. Staff Bookings follow the same Booking rules as player Bookings.
 _Avoid_: Admin, manager, operator
 
 **Audit Log**:
@@ -110,3 +110,19 @@ _Avoid_: Penalty point, flag, demerit
 **Booking Ban**:
 14 days without self-service booking, started whenever a new Strike brings a Player to 3 or more Strikes within 90 days. Existing Bookings are kept, and Staff may still create Bookings for a banned Player at the desk. A banned Player also cannot take a Spot; Spots taken before the ban are kept, and a banned Player may still give a Spot up. The Player sees the ban end date in the app.
 _Avoid_: Suspension, lockout, block
+
+**Desk Thread**:
+The single, never-closing line of Messages between one Player and the venue's front desk. Every Player has exactly one, and it is theirs from the moment the Player record exists — Staff writing to a Player who has never written is simply the first Message in a thread that was already there. It never splits by topic and never closes. A Player writes into their own and reads only their own, including while under a Booking Ban, which stops booking, not talking. The desk side is shared: every Staff reads and answers every Desk Thread through the Desk Inbox, and a Message from the desk is signed Front desk. A Desk Thread carries two unread states, one per side — the Player's own, and the desk's, shared by all Staff — and never a per-Message one. Nothing in a Desk Thread enters the Audit Log: the Messages, each naming the Staff account that wrote it, are the record.
+_Avoid_: Chat, support chat, ticket, case, conversation, inbox (the desk's view of every Desk Thread is the Desk Inbox)
+
+**Message**:
+One piece of text written by one person into one thread — the smallest thing either side sends. Text only: no photo, no file, no voice. A Message is final, so nobody edits one and nobody deletes one, and it is kept for as long as its thread. It carries its author and the moment it was sent; being read is not a property of a Message but of its thread, per side. The same term covers a Message in a Desk Thread and a Message between a Player and a Coach.
+_Avoid_: Text, chat message, note, post, comment, DM
+
+**Front desk**:
+The sender the venue side carries inside a Desk Thread. Every Message the desk writes reaches the Player as "Front desk", whichever Staff typed it, so a Player never learns who answered and never comes to depend on one person. The Staff account that wrote it is recorded on the Message and shown to Staff only, beside the signature. It is not an account, not a login, and not a role standing beside Staff.
+_Avoid_: Reception, support, admin, the venue, owner ("chủ sân" at the desk is Staff)
+
+**Desk Inbox**:
+Every Desk Thread at the venue, held as one thing the whole desk shares. Every Staff sees all of them and any Staff may answer any of them; no thread belongs to a person and none is assigned. Its unread state is shared as well — a thread is unread until any Staff opens it, and whoever opens it clears it for everyone — and that shared badge is how work passes from one shift to the next.
+_Avoid_: Queue, tickets, support inbox, my messages, conversations
