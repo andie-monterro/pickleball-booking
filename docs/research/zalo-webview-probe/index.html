@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Zalo webview probe (AND-95)</title>
+<link rel="manifest" href="/manifest.json" />
+<meta name="theme-color" content="#0b6b3a" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<link rel="apple-touch-icon" href="/icon.png" />
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 12px 12px 60px; font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f6f7f8; color: #14171a; }
+  h1 { font-size: 17px; margin: 0 0 4px; }
+  .sub { color: #5b6570; font-size: 13px; margin: 0 0 14px; }
+  section { background: #fff; border: 1px solid #dfe3e8; border-radius: 10px; padding: 12px; margin: 0 0 12px; }
+  h2 { font-size: 15px; margin: 0 0 8px; }
+  h2 .n { display: inline-block; min-width: 22px; height: 22px; line-height: 22px; text-align: center; background: #0b6b3a; color: #fff; border-radius: 11px; font-size: 12px; margin-right: 6px; }
+  .vi { color: #5b6570; font-size: 13px; margin: 0 0 8px; }
+  button { display: block; width: 100%; padding: 13px; font-size: 15px; font-weight: 600; border: 0; border-radius: 8px; background: #0b6b3a; color: #fff; margin: 8px 0; }
+  button.alt { background: #33475b; }
+  a.btn { display: block; width: 100%; padding: 13px; font-size: 15px; font-weight: 600; border-radius: 8px; background: #33475b; color: #fff; margin: 8px 0; text-align: center; text-decoration: none; }
+  pre { white-space: pre-wrap; word-break: break-all; background: #f0f2f4; border: 1px solid #dfe3e8; border-radius: 6px; padding: 9px; margin: 6px 0 0; font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace; }
+  .ok { color: #0b6b3a; font-weight: 700; }
+  .bad { color: #b3261e; font-weight: 700; }
+  textarea { width: 100%; height: 220px; font: 11px/1.35 ui-monospace, Menlo, Consolas, monospace; border: 1px solid #dfe3e8; border-radius: 6px; padding: 8px; }
+</style>
+</head>
+<body>
+
+<h1>Zalo webview probe — AND-95</h1>
+<p class="sub">Open this page <b>from a Zalo chat</b>, on an iPhone and on an Android phone. Tap every button, top to bottom. Screenshot each result.<br />
+<span lang="vi">Mở trang này <b>từ một tin nhắn Zalo</b>, trên iPhone và trên Android. Bấm từng nút, từ trên xuống. Chụp màn hình mỗi kết quả.</span></p>
+
+<section>
+  <h2><span class="n">1</span>User-Agent &amp; environment</h2>
+  <p class="vi" lang="vi">Tự chạy khi mở trang. Không cần bấm.</p>
+  <pre id="out1">…</pre>
+</section>
+
+<section>
+  <h2><span class="n">2</span>Service worker</h2>
+  <p class="vi" lang="vi">Đăng ký service worker. Đây là thứ quyết định có push được hay không.</p>
+  <button onclick="testSW()">Register service worker</button>
+  <pre id="out2">not run yet</pre>
+</section>
+
+<section>
+  <h2><span class="n">3</span>Camera &amp; microphone</h2>
+  <p class="vi" lang="vi">Có hiện hộp xin quyền camera/mic không? Nếu có, chụp màn hình hộp đó rồi bấm Cho phép hoặc Từ chối.</p>
+  <button onclick="testGUM()">Ask for camera + mic</button>
+  <pre id="out3">not run yet</pre>
+</section>
+
+<section>
+  <h2><span class="n">4</span>Notification API</h2>
+  <p class="vi" lang="vi">Có hiện hộp xin quyền thông báo không?</p>
+  <button onclick="testNotif()">Ask for notification permission</button>
+  <pre id="out4">not run yet</pre>
+</section>
+
+<section>
+  <h2><span class="n">5</span>Installed as a web app?</h2>
+  <p class="vi" lang="vi">Tự chạy khi mở trang.</p>
+  <pre id="out5">…</pre>
+</section>
+
+<section>
+  <h2><span class="n">6</span>Escape to the real browser</h2>
+  <p class="vi" lang="vi">Bốn cách thử thoát khỏi Zalo, ra trình duyệt thật. Bấm lần lượt. Nếu trình duyệt mở ra, quay lại Zalo và bấm nút tiếp theo.</p>
+  <button class="alt" onclick="tryOpenSystem()">A — window.open(url, '_system')</button>
+  <button class="alt" onclick="tryIntent()">B — intent:// (Android)</button>
+  <a class="btn" id="lnkBlank" href="/?via=blank" target="_blank" rel="noopener">C — link target=_blank</a>
+  <a class="btn" id="lnkSafari" href="#">D — x-safari-https:// (iPhone)</a>
+  <pre id="out6">not run yet</pre>
+</section>
+
+<section>
+  <h2>Copy everything</h2>
+  <p class="vi" lang="vi">Bấm nút, rồi dán vào Zalo gửi cho chính mình.</p>
+  <button onclick="collect()">Refresh results below</button>
+  <button class="alt" onclick="copyAll()">Copy all results</button>
+  <textarea id="all" readonly></textarea>
+</section>
+
+<script>
+function set(id, text, cls) {
+  var el = document.getElementById(id);
+  el.textContent = text;
+  el.className = cls || '';
+}
+
+/* 1 — environment */
+(function () {
+  var ua = navigator.userAgent;
+  var zalo = /Zalo/i.test(ua) ? ('YES — token: ' + (ua.match(/Zalo[^\s;)]*[\s/][^\s;)]*/i) || ['?'])[0]) : 'NO — this is not Zalo\'s webview');
+  var lines = [
+    'User-Agent:',
+    ua,
+    '',
+    'Zalo detected: ' + zalo,
+    'Secure context (https): ' + window.isSecureContext,
+    'origin: ' + location.origin,
+    'serviceWorker in navigator: ' + ('serviceWorker' in navigator),
+    'PushManager in window: ' + ('PushManager' in window),
+    'Notification in window: ' + (typeof Notification !== 'undefined'),
+    'mediaDevices.getUserMedia: ' + !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia),
+    'arrived via: ' + (location.search || '(direct)')
+  ];
+  set('out1', lines.join('\n'));
+})();
+
+/* 5 — installed? */
+(function () {
+  var mq = function (m) { try { return window.matchMedia('(display-mode: ' + m + ')').matches; } catch (e) { return 'matchMedia threw: ' + e; } };
+  set('out5', [
+    'display-mode: standalone → ' + mq('standalone'),
+    'display-mode: fullscreen → ' + mq('fullscreen'),
+    'display-mode: minimal-ui → ' + mq('minimal-ui'),
+    'display-mode: browser → ' + mq('browser'),
+    'navigator.standalone (iOS) → ' + (('standalone' in navigator) ? navigator.standalone : 'property does not exist')
+  ].join('\n'));
+})();
+
+/* 2 — service worker */
+function testSW() {
+  if (!('serviceWorker' in navigator)) {
+    set('out2', 'FAIL — navigator.serviceWorker does not exist at all.\n(This is the Android WebView answer.)', 'bad');
+    return;
+  }
+  set('out2', 'registering…');
+  navigator.serviceWorker.register('/sw.js', { scope: '/' }).then(function (reg) {
+    set('out2', 'OK — service worker registered.\nscope: ' + reg.scope + '\nPushManager on registration: ' + !!reg.pushManager, 'ok');
+  }).catch(function (err) {
+    set('out2', 'FAIL — registration threw.\nname: ' + err.name + '\nmessage: ' + err.message, 'bad');
+  });
+}
+
+/* 3 — camera + mic */
+function testGUM() {
+  if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) {
+    set('out3', 'FAIL — navigator.mediaDevices.getUserMedia does not exist.', 'bad');
+    return;
+  }
+  set('out3', 'asking… (a permission box should appear now)');
+  navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then(function (stream) {
+    var kinds = stream.getTracks().map(function (t) { return t.kind; }).join(', ');
+    stream.getTracks().forEach(function (t) { t.stop(); });
+    set('out3', 'OK — camera + mic granted.\ntracks: ' + kinds, 'ok');
+  }).catch(function (err) {
+    set('out3', 'FAIL or DENIED.\nname: ' + err.name + '\nmessage: ' + err.message +
+      '\n\n(NotAllowedError after you tapped Deny = the prompt DID appear.\nAny other error, or no prompt at all = the webview blocks it.)', 'bad');
+  });
+}
+
+/* 4 — notifications */
+function testNotif() {
+  if (typeof Notification === 'undefined') {
+    set('out4', 'FAIL — the Notification API does not exist in this webview.', 'bad');
+    return;
+  }
+  var before = Notification.permission;
+  try {
+    var r = Notification.requestPermission(function () {});
+    if (r && typeof r.then === 'function') {
+      r.then(function (p) { set('out4', 'permission before: ' + before + '\npermission after: ' + p, p === 'granted' ? 'ok' : ''); })
+       .catch(function (e) { set('out4', 'permission before: ' + before + '\nrequestPermission rejected: ' + e, 'bad'); });
+    } else {
+      set('out4', 'permission before: ' + before + '\nrequestPermission returned no promise; now: ' + Notification.permission);
+    }
+  } catch (e) {
+    set('out4', 'FAIL — requestPermission threw.\n' + e, 'bad');
+  }
+}
+
+/* 6 — escape attempts */
+var escapeLog = [];
+function logEscape(line) {
+  escapeLog.push(line);
+  set('out6', escapeLog.join('\n') + '\n\nDid the system browser (Safari / Chrome) actually open?\nWrite YES or NO for each attempt yourself — the page cannot tell.');
+}
+function tryOpenSystem() {
+  try {
+    var w = window.open(location.origin + '/?via=system', '_system');
+    logEscape('A window.open(_system): returned ' + (w ? 'a window object' : 'null'));
+  } catch (e) {
+    logEscape('A window.open(_system): threw ' + e);
+  }
+}
+function tryIntent() {
+  var host = location.host;
+  var url = 'intent://' + host + '/?via=intent#Intent;scheme=https;action=android.intent.action.VIEW;end';
+  try {
+    location.href = url;
+    logEscape('B intent://: navigation attempted, no error');
+  } catch (e) {
+    logEscape('B intent://: threw ' + e);
+  }
+}
+
+/* build the two link-based escape attempts from the real origin */
+(function () {
+  document.getElementById('lnkBlank').href = location.origin + '/?via=blank';
+  var safari = document.getElementById('lnkSafari');
+  safari.href = 'x-safari-https://' + location.host + '/?via=xsafari';
+  safari.addEventListener('click', function () { logEscape('D x-safari-https:// tapped'); });
+  document.getElementById('lnkBlank').addEventListener('click', function () { logEscape('C target=_blank tapped'); });
+})();
+
+/* collect */
+function collect() {
+  var parts = [];
+  parts.push('=== AND-95 Zalo webview probe ===');
+  parts.push('time: ' + new Date().toISOString());
+  [['1 environment', 'out1'], ['2 service worker', 'out2'], ['3 camera+mic', 'out3'],
+   ['4 notifications', 'out4'], ['5 installed', 'out5'], ['6 escape', 'out6']].forEach(function (p) {
+    parts.push('\n--- ' + p[0] + ' ---\n' + document.getElementById(p[1]).textContent);
+  });
+  document.getElementById('all').value = parts.join('\n');
+}
+function copyAll() {
+  collect();
+  var ta = document.getElementById('all');
+  ta.removeAttribute('readonly');
+  ta.focus(); ta.select(); ta.setSelectionRange(0, 999999);
+  var ok = false;
+  try { ok = document.execCommand('copy'); } catch (e) {}
+  ta.setAttribute('readonly', 'readonly');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(ta.value).then(function () {}, function () {});
+  }
+  alert(ok ? 'Copied. Paste it into Zalo.' : 'Copy failed — long-press the box and copy by hand.');
+}
+collect();
+</script>
+</body>
+</html>
