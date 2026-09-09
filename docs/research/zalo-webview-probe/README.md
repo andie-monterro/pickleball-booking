@@ -11,4 +11,8 @@ seven facts about Zalo's in-app browser that [AND-95] could not settle from docu
 Deployed as its own Vercel project, separate from the app, so no Deployment Protection
 login stands between a Zalo tap and the page.
 
+**Live at <https://zalo-webview-probe.vercel.app>** — verified 200 with no redirect to a login.
+Use that host, not the team-scoped `*-andies-projects-*.vercel.app` alias, which is behind
+Vercel Authentication and would show a login page inside Zalo.
+
 Throw this directory away once AND-95 is closed.
