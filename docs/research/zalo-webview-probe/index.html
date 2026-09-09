@@ -95,7 +95,7 @@ function set(id, text, cls) {
 /* 1 — environment */
 (function () {
   var ua = navigator.userAgent;
-  var zalo = /Zalo/i.test(ua) ? ('YES — token: ' + (ua.match(/Zalo[^\s;)]*[\s/][^\s;)]*/i) || ['?'])[0]) : 'NO — this is not Zalo\'s webview');
+  var zalo = /Zalo/i.test(ua) ? ('YES — token: ' + (ua.match(/Zalo[^\s;)]*[\s\/][^\s;)]*/i) || ['?'])[0]) : 'NO — this is not Zalo\'s webview';
   var lines = [
     'User-Agent:',
     ua,
@@ -127,7 +127,7 @@ function set(id, text, cls) {
 /* 2 — service worker */
 function testSW() {
   if (!('serviceWorker' in navigator)) {
-    set('out2', 'FAIL — navigator.serviceWorker does not exist at all.\n(This is the Android WebView answer.)', 'bad');
+    set('out2', 'FAIL — navigator.serviceWorker does not exist at all.\n(The API is not exposed in this webview, so no push is possible here.)', 'bad');
     return;
   }
   set('out2', 'registering…');
