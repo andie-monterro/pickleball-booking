@@ -55,10 +55,15 @@ What was checked, and what was found:
 | Login With Grab / GrabId — the one surface that could plausibly carry rider-personal data | Documented purpose is authentication only: sign in with a Grab account, obtain access/ID tokens, read basic ID-token information (expiry, partner user id). Grab's own SDK README shows only placeholder scopes (`"gid_test_scope_1 gid_test_scope_2 gid_test_scope_3 openid"`) and documents **no** address, place, favourite, or location scope. It does not mention rides, destinations, or deep links at all. | https://github.com/grab/grabplatform-sdk-ios (Grab's own GitHub organisation) |
 | Targeted searches for `saved place`, `favourite location`, `home address`, `place ID`, `savedPlaceId` scoped to developer.grab.com | Nothing relevant returned. | — |
 
-**Do not confuse this with GrabMaps.** GrabMaps (`grabmaps.grab.com`) does document a generic
-"Place ID" concept, but a GrabMaps place id identifies a **public map entity** (a POI, a building).
-It is not a handle on a **specific rider's personal Home/Work/favourite entry**, and nothing
-documents passing one into `grab://open`. Conflating the two would be a mistake.
+**Do not confuse this with GrabMaps.** `grabmaps.grab.com` (fetched directly for this document) is a
+real Grab product page — "Hyperlocal mapping technology and location data solutions for
+businesses" — but it does not document a "Place ID" field or any partner-facing API schema at all;
+the word "place" appears only once, in generic marketing copy. Whether GrabMaps exposes a Place-ID
+concept to partners anywhere is **unverified** (an informal, third-party AWS Location Service page
+lists GrabMaps as a geocoding data provider — see Gaps — but that is not GrabMaps' own
+documentation). Even if it does, a GrabMaps place id would identify a **public map entity** (a POI,
+a building), not a **specific rider's personal Home/Work/favourite entry** — the two concepts are
+not the same thing, and nothing anywhere documents passing either kind of id into `grab://open`.
 
 **Verdict.** A symbolic, rider-owned destination is **undocumented**. This is a finding, not a
 failure: the check covered the ride API's actual schema, the complete documented product index, and
